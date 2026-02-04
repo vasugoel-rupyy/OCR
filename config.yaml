@@ -1,4 +1,5 @@
 # OCR Pipeline Configuration
+# Configuration for Indian Identity Documents: Aadhaar, PAN, Vehicle RC
 
 # Image Quality Gate Thresholds (Relaxed for real-world scans)
 quality:
@@ -26,10 +27,6 @@ business_rules:
   date_validation:
     reject_future_dates: true
     max_age_days: 365
-    
-  amount_validation:
-    min_amount: 0.01
-    max_amount: 1000000.0
 
 # Preprocessing Configuration
 preprocessing:
@@ -79,7 +76,6 @@ segmentation:
     max_field_dispersion: 0.5  # Maximum normalized std dev of field positions
     require_single_schema: true  # Reject if multiple schemas detected
 
-
 # OCR Engine Configuration
 ocr:
   # PaddleOCR Configuration
@@ -98,100 +94,162 @@ ocr:
   alpha_token_weight: 1.0
   stopword_weight: 0.3
 
-# Semantic Validation Rules
+# Semantic Validation Rules for Indian Documents
 semantic:
-  invoice:
-    required_fields: ['invoice_number', 'date', 'total_amount']
-    optional_fields: ['vendor_name', 'subtotal', 'tax', 'due_date']
+  aadhaar:
+    required_fields: ['aadhaar_number', 'name', 'date_of_birth']
+    optional_fields: ['vid', 'gender', 'pin_code', 'enrollment_id', 'address', 'issue_date']
     
     # Field patterns (regex)
     patterns:
-      invoice_number: '[A-Z0-9-]{6,20}'
-      amount: '\d+\.?\d{0,2}'
-      date: '\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'
-    
-    # Validation rules
-    min_amount: 0.01
-    max_amount: 1000000.0
-    
-  id_document:
-    required_fields: ['id_number', 'name', 'date_of_birth']
-    optional_fields: ['expiry_date', 'issue_date', 'address']
+      aadhaar_number: '\d{4}\s?\d{4}\s?\d{4}'  # 12 digits with optional spaces
+      vid: '\d{4}\s?\d{4}\s?\d{4}'  # Virtual ID format
+      name: '[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*'  # Capitalized name
+      date_of_birth: '\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'  # Date format
+      pin_code: '\d{6}'  # 6-digit PIN code
+      enrollment_id: '[0-9]{14}'  # 14-digit enrollment ID
+  
+  pan:
+    required_fields: ['pan_number', 'name', 'date_of_birth']
+    optional_fields: ['father_name', 'signature_present']
     
     # Field patterns
     patterns:
-      id_number: '[A-Z0-9]{8,15}'
-      name: '[A-Z][a-z]+(?: [A-Z][a-z]+)+'
-      date: '\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'
+      pan_number: '[A-Z]{5}\d{4}[A-Z]'  # PAN format: ABCDE1234F
+      name: '[A-Z][A-Z\s]+'  # Uppercase name
+      date_of_birth: '\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'  # Date format
+      father_name: '[A-Z][A-Z\s]+'  # Uppercase father's name
+  
+  vehicle_rc:
+    required_fields: ['registration_number', 'owner_name', 'engine_number', 'chassis_number']
+    optional_fields: ['vehicle_make_model', 'registration_date', 'vehicle_class', 'fuel_type', 
+                      'seating_capacity', 'wheelbase', 'unladen_weight', 'vehicle_color', 
+                      'hypothecation', 'fitness_validity_date', 'insurance_validity_date', 
+                      'manufacturing_date']
+    
+    # Field patterns
+    patterns:
+      registration_number: '[A-Z]{2}\d{2}[A-Z]{1,2}\d{4}'  # State code + district + series + number
+      engine_number: '[A-Z0-9]{6,15}'  # Engine number format
+      chassis_number: '[A-Z0-9]{10,20}'  # Chassis number format
+      owner_name: '[A-Z][A-Z\s]+'  # Uppercase owner name
+      registration_date: '\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'  # Date format
 
 # Layout Validation
 layout:
-  invoice:
+  aadhaar:
     anchors:
-      - keyword: 'invoice'
-        region: 'top'  # top, bottom, left, right, center
-        tolerance: 0.3  # 30% of image dimension
-      - keyword: 'total'
-        region: 'bottom'
-        tolerance: 0.3
-      - keyword: 'date'
+      - keyword: 'aadhaar'
         region: 'top'
         tolerance: 0.3
-    
-    min_anchors_required: 2
-    
-  id_document:
-    anchors:
-      - keyword: 'name'
+      - keyword: 'uidai'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'government of india'
         region: 'top'
         tolerance: 0.3
       - keyword: 'date of birth'
         region: 'center'
         tolerance: 0.4
-      - keyword: 'id'
+      - keyword: 'आधार'
         region: 'top'
         tolerance: 0.3
     
     min_anchors_required: 2
-    photo_region: 'left'  # Expected photo location
+  
+  pan:
+    anchors:
+      - keyword: 'income tax'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'permanent account number'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'pan'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'government of india'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'father'
+        region: 'center'
+        tolerance: 0.4
+    
+    min_anchors_required: 2
+  
+  vehicle_rc:
+    anchors:
+      - keyword: 'registration certificate'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'registration number'
+        region: 'top'
+        tolerance: 0.3
+      - keyword: 'engine no'
+        region: 'center'
+        tolerance: 0.4
+      - keyword: 'chassis no'
+        region: 'center'
+        tolerance: 0.4
+      - keyword: 'owner'
+        region: 'top'
+        tolerance: 0.3
+    
+    min_anchors_required: 2
 
 # Anchor Keywords (Fuzzy Matching)
 anchors:
-  invoice:
-    required: ['invoice', 'total', 'date', 'amount']
-    optional: ['tax', 'subtotal', 'vendor', 'gst', 'bill to']
+  aadhaar:
+    required: ['aadhaar', 'uidai', 'government of india', 'date of birth', 'आधार']
+    optional: ['name', 'address', 'gender', 'pin', 'enrollment', 'vid']
     threshold: 80  # Levenshtein similarity threshold (0-100)
-    
-  id_document:
-    required: ['name', 'dob', 'id', 'date of birth']
-    optional: ['address', 'gender', 'issue date', 'expiry']
+  
+  pan:
+    required: ['income tax', 'permanent account number', 'pan', 'government of india']
+    optional: ['father', 'fathers name', 'signature', 'date of birth', 'dob']
+    threshold: 80
+  
+  vehicle_rc:
+    required: ['registration certificate', 'registration number', 'engine', 'chassis', 'owner']
+    optional: ['vehicle', 'make', 'model', 'fuel', 'color', 'fitness', 'insurance']
     threshold: 80
 
 # Token Distribution Profiles
 distribution:
-  invoice:
-    min_numeric_ratio: 0.10
-    max_special_char_ratio: 0.20
-    avg_word_length_range: [2, 10]
-    
-  id_document:
-    min_numeric_ratio: 0.05
-    max_special_char_ratio: 0.15
+  aadhaar:
+    min_numeric_ratio: 0.15  # Aadhaar has many digits
+    max_special_char_ratio: 0.10
+    avg_word_length_range: [3, 15]
+  
+  pan:
+    min_numeric_ratio: 0.10  # PAN has alphanumeric mix
+    max_special_char_ratio: 0.05
     avg_word_length_range: [3, 12]
+  
+  vehicle_rc:
+    min_numeric_ratio: 0.20  # RC has many numbers (registration, engine, chassis)
+    max_special_char_ratio: 0.15
+    avg_word_length_range: [2, 15]
 
 # Statistical Consistency Checks
 consistency:
-  invoice:
-    enable_arithmetic_check: true
-    arithmetic_tolerance: 0.02  # 2% tolerance for rounding
+  aadhaar:
     enable_date_validation: true
-    max_future_days: 30  # Allow invoices dated up to 30 days in future
-    
-  id_document:
-    enable_date_validation: true
-    require_expiry_after_issue: true
-    min_age: 0  # Minimum age for ID holder
+    require_dob_in_past: true
+    min_age: 0
     max_age: 150
+  
+  pan:
+    enable_date_validation: true
+    require_dob_in_past: true
+    min_age: 0
+    max_age: 150
+  
+  vehicle_rc:
+    enable_date_validation: true
+    require_registration_after_manufacturing: true
+    require_fitness_after_registration: true
+    require_insurance_after_registration: true
 
 # Multi-Stage Scoring Weights
 scoring:
@@ -205,24 +263,25 @@ scoring:
     consistency: 0.10
     schema_completeness: 0.15
     distribution: 0.05
-    spatial_compactness: 0.05  # NEW: Prevent cross-region field mixing
-
+    spatial_compactness: 0.05  # Prevent cross-region field mixing
   
   # Field-level importance weights
   field_weights:
-    invoice:
-      invoice_number: 1.5
-      total_amount: 2.0
-      date: 1.5
-      vendor_name: 1.0
-      subtotal: 1.2
-      tax: 1.2
+    aadhaar:
+      aadhaar_number: 0.40  # Most critical
+      name: 0.30
+      date_of_birth: 0.30
     
-    id_document:
-      id_number: 2.0
-      name: 1.8
-      date_of_birth: 1.5
-      expiry_date: 1.3
+    pan:
+      pan_number: 0.50  # Most critical
+      name: 0.25
+      date_of_birth: 0.25
+    
+    vehicle_rc:
+      registration_number: 0.40  # Most critical
+      owner_name: 0.20
+      engine_number: 0.20
+      chassis_number: 0.20
 
 # Decision Thresholds
 decision:
@@ -236,9 +295,8 @@ decision:
     quality_gate_failed: true
     mandatory_field_missing: true
     excessive_non_alphanumeric: 0.85
-    multiple_documents_detected: true  # NEW: Reject if multiple high-confidence regions
-    conflicting_schemas: true  # NEW: Reject if conflicting document schemas detected
-
+    multiple_documents_detected: true  # Reject if multiple high-confidence regions
+    conflicting_schemas: true  # Reject if conflicting document schemas detected
 
 # Batch Processing
 batch:
