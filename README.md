@@ -38,7 +38,7 @@ The system explains its decisions via a weighted confidence score [0-1] based on
 
 1. **Clone the repository** (if applicable):
 ```bash
-git clone <repository-url>
+git clone <https://github.com/vasugoel-rupyy/OCR>
 cd OCR
 ```
 
