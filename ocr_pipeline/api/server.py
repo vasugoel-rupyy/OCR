@@ -12,6 +12,8 @@ from typing import Dict, Any
 from ..core.pipeline import OCRPipeline
 from .models import OCRRequest, OCRResponse
 
+from fastapi.concurrency import run_in_threadpool
+
 # Config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr_pipeline.api")
@@ -36,8 +38,12 @@ async def startup_event():
     logger.info("OCR Pipeline initialized.")
 
 
-async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
-    """Helper to process an image and return response data."""
+def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
+    """Helper to process an image and return response data.
+    
+    This function is synchronous and should be run in a threadpool
+    to avoid blocking the main event loop.
+    """
     if not pipeline:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
     
@@ -107,7 +113,7 @@ async def process_url(request: OCRRequest):
     Process an image from a URL.
     document_type in body overrides default 'auto'.
     """
-    return await _process_and_respond(request.image_url, request.document_type)
+    return await run_in_threadpool(_process_and_respond, request.image_url, request.document_type)
 
 
 @app.post("/ocr/process_url/{doc_type}", response_model=OCRResponse)
@@ -116,7 +122,7 @@ async def process_url_with_type(doc_type: str, request: OCRRequest):
     Process an image from a URL with a predefined document type in the path.
     Path parameter doc_type overrides anything in the body.
     """
-    return await _process_and_respond(request.image_url, doc_type)
+    return await run_in_threadpool(_process_and_respond, request.image_url, doc_type)
 
 
 def main():
