@@ -12,8 +12,6 @@ from typing import Dict, Any
 from ..core.pipeline import OCRPipeline
 from .models import OCRRequest, OCRResponse
 
-from fastapi.concurrency import run_in_threadpool
-
 # Config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr_pipeline.api")
@@ -38,12 +36,8 @@ async def startup_event():
     logger.info("OCR Pipeline initialized.")
 
 
-def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
-    """Helper to process an image and return response data.
-    
-    This function is synchronous and should be run in a threadpool
-    to avoid blocking the main event loop.
-    """
+async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
+    """Helper to process an image and return response data."""
     if not pipeline:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
     
@@ -87,7 +81,10 @@ def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
             confidence_score=round(result.confidence.final_score, 3),
             reason=reason,
             extracted_fields=result.extracted_fields,
-            processing_time=round(result.processing_time, 2)
+            processing_time=round(result.processing_time, 2),
+            extraction_method=result.ocr_stats.get('method', 'fallback_ocr'),
+            template_confidence=result.ocr_stats.get('template_score'),
+            fallback_confidence=result.ocr_stats.get('fallback_score')
         )
         
         logger.info(f"Processing complete: {result.decision} (Score: {response_data.confidence_score})")
@@ -113,7 +110,7 @@ async def process_url(request: OCRRequest):
     Process an image from a URL.
     document_type in body overrides default 'auto'.
     """
-    return await run_in_threadpool(_process_and_respond, request.image_url, request.document_type)
+    return await _process_and_respond(request.image_url, request.document_type)
 
 
 @app.post("/ocr/process_url/{doc_type}", response_model=OCRResponse)
@@ -122,7 +119,7 @@ async def process_url_with_type(doc_type: str, request: OCRRequest):
     Process an image from a URL with a predefined document type in the path.
     Path parameter doc_type overrides anything in the body.
     """
-    return await run_in_threadpool(_process_and_respond, request.image_url, doc_type)
+    return await _process_and_respond(request.image_url, doc_type)
 
 
 def main():

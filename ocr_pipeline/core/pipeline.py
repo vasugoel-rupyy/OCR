@@ -25,6 +25,7 @@ from .classification import DocumentClassifier
 from ..segmentation import SegmentationPipeline, Region
 from ..validation.spatial_validator import SpatialValidator
 from ..validation.business_rules import BusinessRuleValidator
+from ..templates.pipeline import TemplatePipeline
 
 
 @dataclass
@@ -114,6 +115,9 @@ class OCRPipeline:
         self.spatial_validator = SpatialValidator(self.config)
         self.business_rule_validator = BusinessRuleValidator(self.config.get('business_rules', {}))
         
+        # Initialize Template Pipeline (New Hybrid Mode)
+        self.template_pipeline = TemplatePipeline(self.config)
+        
         self.logger.info("OCR Pipeline initialized successfully")
     
     def process_document(self,
@@ -134,6 +138,9 @@ class OCRPipeline:
         start_time = time.time()
         
         self.logger.info(f"Processing document: {image_path} (type: {document_type})")
+        
+        # Initialize confidence tracking
+        template_conf = 0.0
         
         try:
             # Load image
@@ -201,6 +208,64 @@ class OCRPipeline:
             processed_image = preprocessing_result['processed_image']
 
             
+            # Stage 2.5: Template-Based Extraction (Hybrid Path)
+            self.logger.debug("Stage 2.5: Template-Based Extraction")
+            template_name, template_data, template_conf = self.template_pipeline.process(processed_image)
+            
+            if template_name and template_conf > 0.8 and template_data:
+                self.logger.info(f"Template '{template_name}' matched with high confidence ({template_conf:.2f}). Using template result.")
+                
+                # Construct result from template data
+                # We skip the rest of the expensive heavy pipeline
+                processing_time = time.time() - start_time
+                
+                # Create a synthetic confidence object (mostly high scores)
+                synth_confidence = DocumentConfidence(
+                    final_score=template_conf,
+                    ocr_confidence=0.95, # Region OCR is usually cleaner
+                    regex_match_score=1.0,
+                    fuzzy_match_score=1.0,
+                    layout_score=1.0,
+                    kv_pair_score=1.0,
+                    consistency_score=1.0, 
+                    schema_compliance_score=1.0,
+                    distribution_score=1.0,
+                    spatial_compactness_score=1.0,
+                    image_quality_score=quality_metrics.composite_score
+                )
+                
+                # Create Decision
+                decision_result = DecisionResult(
+                    decision=Decision.ACCEPT,
+                    confidence_score=template_conf,
+                    reasons=[f"Matched template: {template_name}"],
+                    hard_rejection=False
+                )
+                
+                return PipelineResult(
+                    document_path=str(image_path),
+                    document_type=template_name.split('_')[0] if template_name else "auto", 
+                    decision=decision_result.decision.value,
+                    confidence=synth_confidence,
+                    decision_result=decision_result,
+                    extracted_fields=template_data,
+                    quality_metrics=quality_metrics.to_dict(),
+                    ocr_stats={
+                        'method': 'template', 
+                        'regions_count': len(template_data),
+                        'template_score': template_conf,
+                        'fallback_score': None
+                    },
+                    full_text="[Template Extraction - Full Text Not Assembled]", 
+                    processing_time=processing_time,
+                    error=None,
+                    regions_detected=num_regions,
+                    region_selected=region_info,
+                    multi_document_flag=multi_document_flag
+                )
+                
+            self.logger.info("Template matching low confidence or failed. Falling back to Full-Document OCR.")
+
             # Stage 3: OCR
             self.logger.debug("Stage 3: OCR Extraction")
             
@@ -448,7 +513,12 @@ class OCRPipeline:
                 decision_result=decision_result,
                 extracted_fields=extracted_fields,
                 quality_metrics=quality_metrics.to_dict(),
-                ocr_stats=primary_ocr_result.get_stats(),
+                ocr_stats={
+                    **primary_ocr_result.get_stats(),
+                    'method': 'fallback_ocr',
+                    'template_score': template_conf,
+                    'fallback_score': document_confidence.final_score
+                },
                 full_text=primary_ocr_result.full_text,
                 processing_time=processing_time,
                 error=None,

@@ -19,3 +19,6 @@ class OCRResponse(BaseModel):
     reason: str
     extracted_fields: Dict[str, Any]
     processing_time: float
+    extraction_method: Optional[str] = "fallback_ocr"
+    template_confidence: Optional[float] = None
+    fallback_confidence: Optional[float] = None
