@@ -74,7 +74,7 @@ class TemplateMatcher:
             ocr_result = self.ocr_engine.extract_text(image)
         
         full_text_lower = ocr_result.full_text.lower()
-        logger.info(f"Template Matcher found text: {full_text_lower[:100]}...") # Log first 100 chars
+        logger.info(f"Template Matcher found text: {full_text_lower}") # Log full text
         
         best_template = None
         best_score = 0.0

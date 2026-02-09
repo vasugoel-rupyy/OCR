@@ -10,10 +10,11 @@ import logging
 from typing import Dict, Any
 
 from ..core.pipeline import OCRPipeline
+from ..utils import setup_logging
 from .models import OCRRequest, OCRResponse
 
 # Config
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 logger = logging.getLogger("ocr_pipeline.api")
 
 app = FastAPI(

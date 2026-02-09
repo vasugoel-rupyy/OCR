@@ -222,13 +222,13 @@ class OCRPipeline:
                 # Create a synthetic confidence object (mostly high scores)
                 synth_confidence = DocumentConfidence(
                     final_score=template_conf,
-                    ocr_confidence=0.95, # Region OCR is usually cleaner
-                    regex_match_score=1.0,
-                    fuzzy_match_score=1.0,
+                    ocr_confidence_score=0.95, # Region OCR is usually cleaner
+                    regex_score=1.0,
+                    fuzzy_score=1.0,
                     layout_score=1.0,
-                    kv_pair_score=1.0,
+                    kv_score=1.0,
                     consistency_score=1.0, 
-                    schema_compliance_score=1.0,
+                    schema_score=1.0,
                     distribution_score=1.0,
                     spatial_compactness_score=1.0,
                     image_quality_score=quality_metrics.composite_score

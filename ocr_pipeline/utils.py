@@ -55,6 +55,10 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> logging.Logger:
     logger = logging.getLogger('ocr_pipeline')
     logger.setLevel(getattr(logging, config.get('level', 'INFO')))
     
+    # Avoid adding duplicate handlers if already configured
+    if logger.hasHandlers():
+        return logger
+    
     # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
