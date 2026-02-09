@@ -1,9 +1,38 @@
-"""Base document processor class."""
+"""Base document processor classes and Pydantic models."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
+from enum import Enum
+from pydantic import BaseModel, Field
 import numpy as np
 from ..ocr.models import OCRResult
+
+
+class Decision(str, Enum):
+    """Decision for document validation."""
+    ACCEPT = "ACCEPT"
+    REVIEW = "REVIEW"
+    REJECT = "REJECT"
+
+
+class FieldValue(BaseModel):
+    """Represents a field value with its confidence score."""
+    value: Optional[str] = None
+    confidence: float = 0.0
+    
+    class Config:
+        frozen = True
+
+
+class BaseDocument(BaseModel):
+    """Base model for all document types."""
+    template_used: Optional[str] = None
+    template_confidence: float = 0.0
+    overall_confidence: float = 0.0
+    decision: Decision = Decision.REVIEW
+    
+    # Metadata for debugging
+    raw_extraction: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
 
 
 class BaseDocumentProcessor(ABC):

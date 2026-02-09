@@ -85,7 +85,8 @@ async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
             processing_time=round(result.processing_time, 2),
             extraction_method=result.ocr_stats.get('method', 'fallback_ocr'),
             template_confidence=result.ocr_stats.get('template_score'),
-            fallback_confidence=result.ocr_stats.get('fallback_score')
+            fallback_confidence=result.ocr_stats.get('fallback_score'),
+            structured_document=result.structured_document
         )
         
         logger.info(f"Processing complete: {result.decision} (Score: {response_data.confidence_score})")

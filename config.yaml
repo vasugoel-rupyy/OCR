@@ -98,7 +98,7 @@ ocr:
 semantic:
   aadhaar:
     required_fields: ['aadhaar_number', 'name', 'date_of_birth']
-    optional_fields: ['vid', 'gender', 'pin_code', 'enrollment_id', 'address', 'issue_date']
+    optional_fields: ['vid', 'gender', 'pin_code', 'enrollment_id', 'address']
     
     # Field patterns (regex)
     patterns:

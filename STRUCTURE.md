@@ -11,20 +11,23 @@ OCR/
 │   ├── api/                   # API layer
 │   │   ├── __init__.py
 │   │   ├── models.py          # Pydantic request/response models
-│   │   └── server.py           # FastAPI application
-│   ├── core/                  # Core pipeline logic
+│   │   └── server.py          # FastAPI application
+│   ├── builders/              # Document Construction (NEW)
 │   │   ├── __init__.py
-│   │   ├── pipeline.py         # Main OCRPipeline orchestrator
-│   │   └── classification.py   # Document type classification
+│   │   └── document_builder.py # Maps raw extraction to typed Pydantic models
 │   ├── compat/                # Compatibility shims
 │   │   ├── __init__.py
 │   │   └── imghdr.py          # Python 3.13+ compatibility for paddleocr
-│   ├── documents/             # Document-specific extractors
+│   ├── core/                  # Core pipeline logic
 │   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── aadhaar.py
-│   │   ├── pan.py
-│   │   └── vehicle_rc.py
+│   │   ├── pipeline.py        # Main OCRPipeline orchestrator
+│   │   └── classification.py  # Document type classification
+│   ├── documents/             # Document-specific extractors & Models
+│   │   ├── __init__.py
+│   │   ├── base.py            # Base document models
+│   │   ├── aadhaar.py         # Aadhaar extraction & Pydantic model
+│   │   ├── pan.py            # PAN extraction & Pydantic model
+│   │   └── vehicle_rc.py      # RC extraction & Pydantic model
 │   ├── ocr/                   # OCR engine wrapper
 │   │   ├── __init__.py
 │   │   ├── engine.py
@@ -47,6 +50,13 @@ OCR/
 │   │   ├── region.py
 │   │   ├── segmentation_pipeline.py
 │   │   └── text_clustering.py
+│   ├── templates/             # Template Matching (Hybrid Path)
+│   │   ├── __init__.py
+│   │   ├── definitions.py     # Template definitions (Aadhaar/PAN/RC)
+│   │   ├── extractor.py       # Template-based field extraction
+│   │   ├── library.py         # Template registry
+│   │   ├── matcher.py         # Template matching logic
+│   │   └── pipeline.py        # Template pipeline orchestrator
 │   ├── validation/            # Validation modules
 │   │   ├── __init__.py
 │   │   ├── anchors.py
@@ -70,42 +80,34 @@ OCR/
 └── README.md                  # Project documentation
 ```
 
-## Key Changes
+## Key Architecture Components
 
-### 1. Package Structure
-- **Before**: `src/` directory with flat structure
-- **After**: `ocr_pipeline/` proper Python package with organized modules
+### 1. Document Builders (`ocr_pipeline/builders/`)
+This module is responsible for converting raw, untyped dictionary data from OCR extraction into strictly typed Pydantic models. It handles:
+- Field-level confidence assignment.
+- Data type conversion.
+- Final document assembly (AadhaarDocument, PanDocument, etc.).
 
-### 2. API Separation
-- **Before**: `api_server.py` at root level
-- **After**: `ocr_pipeline/api/` with separated models and server
+### 2. Template Matching (`ocr_pipeline/templates/`)
+A generic template matching system that allows for:
+- Fast-path extraction for known high-quality document layouts.
+- Alignment based on key anchor points.
+- Fallback to full OCR if templates don't match.
+*(Note: Can be enabled/disabled via pipeline configuration)*
 
 ### 3. Core Logic Organization
-- **Before**: `pipeline.py` and `classification.py` in `src/`
-- **After**: `ocr_pipeline/core/` for core orchestration logic
+- **Orchestrator**: `ocr_pipeline/core/pipeline.py` manages the flow between Quality Gate -> Template Matcher -> Fallback OCR -> Document Builder.
+- **Classification**: `ocr_pipeline/core/classification.py` handles automatic document type detection.
 
 ### 4. Compatibility Handling
-- **Before**: `imghdr.py` at root level
-- **After**: `ocr_pipeline/compat/` with automatic Python 3.13+ compatibility
-
-### 5. Entry Point
-- **Before**: `python api_server.py`
-- **After**: `python run.py` or `ocr-pipeline-api` command
+- **`ocr_pipeline/compat/`**: Provides strict compatibility shims for Python 3.13+, ensuring dependencies like PaddleOCR continue to function even when standard library modules like `imghdr` are deprecated.
 
 ## Import Patterns
 
-### Before
-```python
-from src.pipeline import OCRPipeline
-from src.quality import ImageQualityAssessor
-```
-
-### After
 ```python
 from ocr_pipeline import OCRPipeline
-from ocr_pipeline.quality import ImageQualityAssessor
-from ocr_pipeline.core.pipeline import OCRPipeline
 from ocr_pipeline.api.models import OCRRequest, OCRResponse
+from ocr_pipeline.builders.document_builder import DocumentBuilder
 ```
 
 ## Running the Application
@@ -124,11 +126,3 @@ ocr-pipeline-api
 Once running, access:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
-
-## Benefits
-
-1. **Better Organization**: Clear separation of concerns (API, core, compatibility)
-2. **Proper Package**: Can be installed via pip
-3. **Easier Testing**: Tests can import from package directly
-4. **Maintainability**: Logical grouping makes code easier to navigate
-5. **Scalability**: Easy to add new modules without cluttering root directory

@@ -2,8 +2,34 @@
 
 import re
 from typing import Dict, Optional, List
+from pydantic import Field
 from ..ocr.models import OCRResult
 from ..validation.normalization import TokenNormalizer
+from .base import BaseDocument, FieldValue
+
+
+class RcDocument(BaseDocument):
+    """Structured Vehicle RC document model."""
+    registration_number: FieldValue
+    owner_name: FieldValue
+    vehicle_make_model: Optional[FieldValue] = None
+    engine_number: FieldValue
+    chassis_number: FieldValue
+    registration_date: FieldValue
+    vehicle_class: Optional[FieldValue] = None
+    fuel_type: Optional[FieldValue] = None
+    seating_capacity: Optional[FieldValue] = None
+    wheelbase: Optional[FieldValue] = None
+    unladen_weight: Optional[FieldValue] = None
+    vehicle_color: Optional[FieldValue] = None
+    hypothecation: Optional[FieldValue] = None
+    fitness_validity_date: Optional[FieldValue] = None
+    insurance_validity_date: Optional[FieldValue] = None
+    manufacturing_date: Optional[FieldValue] = None
+    
+    def get_document_type(self) -> str:
+        return "vehicle_rc"
+
 
 
 class VehicleRCExtractor:

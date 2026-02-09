@@ -20,6 +20,11 @@ from ..validation.distribution import DistributionAnalyzer
 from ..validation.key_value import KeyValueExtractor
 from ..ocr import PaddleOCREngine, OCRResult
 from ..documents import AadhaarExtractor, PANExtractor, VehicleRCExtractor, BaseDocumentProcessor
+from ..documents.base import BaseDocument
+from ..documents.aadhaar import AadhaarDocument
+from ..documents.pan import PanDocument
+from ..documents.vehicle_rc import RcDocument
+from ..builders.document_builder import DocumentBuilder
 from ..scoring import ConfidenceScorer, DecisionEngine, DocumentConfidence, DecisionResult, Decision
 from .classification import DocumentClassifier
 from ..segmentation import SegmentationPipeline, Region
@@ -45,6 +50,8 @@ class PipelineResult:
     regions_detected: int = 1  # NEW: Number of regions detected
     region_selected: Optional[Dict] = None  # NEW: Selected region info
     multi_document_flag: bool = False  # NEW: Multiple documents detected
+    structured_document: Optional[BaseDocument] = None  # NEW: Typed document model
+
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for serialization."""
@@ -62,7 +69,9 @@ class PipelineResult:
             'error': self.error,
             'regions_detected': self.regions_detected,
             'region_selected': self.region_selected,
-            'multi_document_flag': self.multi_document_flag
+            'multi_document_flag': self.multi_document_flag,
+            'structured_document': self.structured_document.model_dump(mode='json') if self.structured_document else None
+
         }
 
 
@@ -209,8 +218,9 @@ class OCRPipeline:
 
             
             # Stage 2.5: Template-Based Extraction (Hybrid Path)
-            self.logger.debug("Stage 2.5: Template-Based Extraction")
-            template_name, template_data, template_conf = self.template_pipeline.process(processed_image)
+            self.logger.debug("Stage 2.5: Template-Based Extraction - DISABLED by user request")
+            # template_name, template_data, template_conf = self.template_pipeline.process(processed_image)
+            template_name, template_data, template_conf = None, None, 0.0
             
             if template_name and template_conf > 0.8 and template_data:
                 self.logger.info(f"Template '{template_name}' matched with high confidence ({template_conf:.2f}). Using template result.")
@@ -242,9 +252,27 @@ class OCRPipeline:
                     hard_rejection=False
                 )
                 
+                # Build structured document from template data
+                doc_type = template_name.split('_')[0] if template_name else "auto"
+                field_confs = {k: template_conf for k in template_data}
+                
+                structured_doc = None
+                if doc_type == 'aadhaar':
+                    structured_doc = DocumentBuilder.build_aadhaar(template_data, field_confs)
+                elif doc_type == 'pan':
+                    structured_doc = DocumentBuilder.build_pan(template_data, field_confs)
+                elif doc_type == 'vehicle_rc' or doc_type == 'rc': # handle 'rc' alias if needed
+                    structured_doc = DocumentBuilder.build_rc(template_data, field_confs)
+                
+                if structured_doc:
+                    structured_doc.template_used = template_name
+                    structured_doc.template_confidence = template_conf
+                    structured_doc.overall_confidence = template_conf
+                    structured_doc.decision = Decision.ACCEPT
+
                 return PipelineResult(
                     document_path=str(image_path),
-                    document_type=template_name.split('_')[0] if template_name else "auto", 
+                    document_type=doc_type,
                     decision=decision_result.decision.value,
                     confidence=synth_confidence,
                     decision_result=decision_result,
@@ -261,7 +289,8 @@ class OCRPipeline:
                     error=None,
                     regions_detected=num_regions,
                     region_selected=region_info,
-                    multi_document_flag=multi_document_flag
+                    multi_document_flag=multi_document_flag,
+                    structured_document=structured_doc
                 )
                 
             self.logger.info("Template matching low confidence or failed. Falling back to Full-Document OCR.")
@@ -505,6 +534,29 @@ class OCRPipeline:
                 f"(score: {document_confidence.final_score:.3f}, time: {processing_time:.2f}s)"
             )
             
+            # Build structured document
+            field_confs = {k: ocr_confidence_score for k in extracted_fields}
+            structured_doc = None
+            
+            if document_type == 'aadhaar':
+                structured_doc = DocumentBuilder.build_aadhaar(extracted_fields, field_confs)
+            elif document_type == 'pan':
+                structured_doc = DocumentBuilder.build_pan(extracted_fields, field_confs)
+            elif document_type == 'vehicle_rc':
+                structured_doc = DocumentBuilder.build_rc(extracted_fields, field_confs)
+            
+            if structured_doc:
+                # Sync confidence and decision from pipeline
+                structured_doc.overall_confidence = document_confidence.final_score
+                # Map pipeline decision string to Enum
+                try:
+                    structured_doc.decision = Decision(decision_result.decision.value)
+                except:
+                    structured_doc.decision = Decision.REVIEW
+                
+                # Add raw extraction for debugging (optional, usually excluded)
+                # structured_doc.raw_extraction = extracted_fields
+
             return PipelineResult(
                 document_path=str(image_path),
                 document_type=document_type,
@@ -524,7 +576,8 @@ class OCRPipeline:
                 error=None,
                 regions_detected=num_regions,
                 region_selected=region_info,
-                multi_document_flag=multi_document_flag
+                multi_document_flag=multi_document_flag,
+                structured_document=structured_doc
             )
         
         except Exception as e:

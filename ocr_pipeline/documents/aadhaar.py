@@ -3,9 +3,29 @@
 import re
 import cv2
 import numpy as np
+
 from typing import Dict, Optional, List, Tuple
+from pydantic import Field
 from ..ocr.models import OCRResult
 from ..validation.normalization import TokenNormalizer
+from .base import BaseDocument, FieldValue
+
+
+class AadhaarDocument(BaseDocument):
+    """Structured Aadhaar document model."""
+    aadhaar_number: FieldValue
+    name: FieldValue
+    date_of_birth: Optional[FieldValue] = None
+    year_of_birth: Optional[FieldValue] = None
+    gender: FieldValue
+    address: Optional[FieldValue] = None
+    pin_code: Optional[FieldValue] = None
+    vid: Optional[FieldValue] = None
+    enrollment_id: Optional[FieldValue] = None
+    
+    def get_document_type(self) -> str:
+        return "aadhaar"
+
 
 
 class AadhaarExtractor:
@@ -73,10 +93,6 @@ class AadhaarExtractor:
         if address:
             fields['address'] = address
             
-        # Extract Generation Date (Issue/Download)
-        gen_date = self._extract_generation_date(text)
-        if gen_date:
-            fields['issue_date'] = gen_date
         
         return fields
     
@@ -267,12 +283,18 @@ class AadhaarExtractor:
     
     def _extract_dob(self, text: str) -> Optional[str]:
         """Extract Date of Birth."""
-        # Common formats: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD
-        # Also handle OCR noise like "DOP" instead of "DOB" and missing separators
+        text = TokenNormalizer.convert_devanagari_to_arabic(text)
+        
+        # Pattern: DOB : DD/MM/YYYY or YOB : YYYY
+        # Also simple date search
+        dob_pattern = r'(?:dob|date\s+of\s+birth|yob|year\s+of\s+birth)\s*[:.-]?\s*(\d{2}/\d{2}/\d{4}|\d{4})'
+        
+        # Robust patterns handling OCR noise and compound labels
         dob_patterns = [
-            r'(?:dob|date\s+of\s+birth|जन्म\s+तिथि|dop)\s*:?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})',
-            r'(?:dob|date\s+of\s+birth|जन्म\s+तिथि|dop)\s*:?\s*(\d{8})',
-            r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})',  # Any date format
+            # Matches "DOB : DD/MM/YYYY", "Date of Birth / DOB : DD/MM/YYYY"
+            r'(?:dob|d0b|date\s+of\s+birth|जन्म\s+तिथि|dop)(?:[/\s\w]*)\s*[:.-]?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})',
+            r'(?:dob|d0b|date\s+of\s+birth|जन्म\s+तिथि|dop)(?:[/\s\w]*)\s*[:.-]?\s*(\d{8})',
+            r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})',  # Any date format fall back
         ]
         
         for pattern in dob_patterns:
@@ -402,20 +424,6 @@ class AadhaarExtractor:
             return match.group(1)
         return None
         
-    def _extract_generation_date(self, text: str) -> Optional[str]:
-        """Extract Issue/Download date."""
-        text = TokenNormalizer.convert_devanagari_to_arabic(text)
-        # Look for patterns like "Issue Date: DD/MM/YYYY" or just date 
-        dates = re.findall(r'\b(\d{2}/\d{2}/\d{4})\b', text)
-        
-        # Usually checking for near "Issue" or "Download"
-        if dates:
-             # Heuristic: Return the last found date as it often appears at bottom? 
-             # Or check context. For now, valid date.
-             for d in dates:
-                 norm = TokenNormalizer.normalize_date(d)
-                 if norm: return norm
-        return None
 
     def _extract_gender(self, text: str) -> Optional[str]:
         """Extract gender."""
@@ -435,25 +443,6 @@ class AadhaarExtractor:
             
         return None
         
-    def _extract_dob(self, text: str) -> Optional[str]:
-        """Extract Date of Birth."""
-        text = TokenNormalizer.convert_devanagari_to_arabic(text)
-        
-        # Pattern: DOB : DD/MM/YYYY or YOB : YYYY
-        # Also simple date search
-        dob_pattern = r'(?:dob|date\s+of\s+birth|yob|year\s+of\s+birth)\s*[:.-]?\s*(\d{2}/\d{2}/\d{4}|\d{4})'
-        match = re.search(dob_pattern, text, re.IGNORECASE)
-        if match:
-             val = match.group(1)
-             if len(val) == 4: # YOB
-                 return f"01/01/{val}" # Normalize YOB to Jan 1st? Or keep as YYYY? Spec says "DD/MM/YYYY or YYYY".
-             return TokenNormalizer.normalize_date(val)
-             
-        # Fallback: Find any date near "DOB" or isolated
-        # ...
-        return None
-        
-    def _extract_address(self, text: str, ocr_result: OCRResult) -> Optional[str]:
         """Extract address (simplified)."""
         # ... existing logic or improved ...
         # For now, simplistic capture of text block ?

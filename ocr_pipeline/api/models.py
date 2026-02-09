@@ -1,7 +1,11 @@
 """Pydantic models for API requests and responses."""
 
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+from ..documents.aadhaar import AadhaarDocument
+from ..documents.pan import PanDocument
+from ..documents.vehicle_rc import RcDocument
+from ..documents.base import BaseDocument
 
 
 class OCRRequest(BaseModel):
@@ -22,3 +26,4 @@ class OCRResponse(BaseModel):
     extraction_method: Optional[str] = "fallback_ocr"
     template_confidence: Optional[float] = None
     fallback_confidence: Optional[float] = None
+    structured_document: Optional[Union[AadhaarDocument, PanDocument, RcDocument, BaseDocument]] = None

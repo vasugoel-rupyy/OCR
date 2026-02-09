@@ -8,10 +8,10 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="ocr-pipeline",
-    version="1.0.0",
+    version="1.1.0",
     author="Your Organization",
     author_email="your.email@example.com",
-    description="Production-ready self-hosted OCR pipeline for invoices and ID documents",
+    description="Production-ready self-hosted OCR pipeline with structured Pydantic outputs for ID documents",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/ocr-pipeline",

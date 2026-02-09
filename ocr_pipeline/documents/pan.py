@@ -2,8 +2,23 @@
 
 import re
 from typing import Dict, Optional, List
+from pydantic import Field
 from ..ocr.models import OCRResult
 from ..validation.normalization import TokenNormalizer
+from .base import BaseDocument, FieldValue
+
+
+class PanDocument(BaseDocument):
+    """Structured PAN document model."""
+    pan_number: FieldValue
+    name: FieldValue
+    father_name: FieldValue
+    date_of_birth: FieldValue
+    signature_present: Optional[bool] = False
+    
+    def get_document_type(self) -> str:
+        return "pan"
+
 
 
 class PANExtractor:
