@@ -34,95 +34,114 @@ The system explains its decisions via a weighted confidence score [0-1] based on
 
 ## Installation
 
-### Prerequisites
-
-#### Install UV (Recommended Package Manager)
-
-**macOS/Linux:**
+### Quick Start (3 Steps)
 
 ```bash
+# 1. Install UV package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Clone and install
+git clone https://github.com/yourusername/ocr-pipeline.git
+cd ocr-pipeline
+uv sync
+
+# 3. Run the API server
+uv run ocr-pipeline-api
 ```
 
-**Windows (PowerShell):**
+Visit `http://localhost:8000/docs` to access the API documentation.
 
-```powershell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
+---
 
-**Alternative (via pip):**
+### System Dependencies (Optional but Recommended)
+
+<details>
+<summary><b>Click to expand system dependencies</b></summary>
+
+Most modern systems have these already. Install only if you encounter issues:
+
+**Ubuntu/Debian:**
 
 ```bash
-pip install uv
+sudo apt-get update && sudo apt-get install -y ffmpeg libsm6 libxext6
 ```
 
-#### System Dependencies
-
-**macOS Users:**
+\*\*macOS (Homebrew):
 
 ```bash
-# Install system dependencies via Homebrew
 brew install ffmpeg
-
-# Optional: For better performance
-brew install libomp
 ```
 
-**Linux Users:**
+**Fedora/RHEL:**
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install ffmpeg libsm6 libxext6 libxrender-dev
-
-# Fedora/RHEL
 sudo dnf install ffmpeg
 ```
 
-### Setup with UV (Recommended)
+</details>
 
-1. **Clone the repository**:
+---
 
-   ```bash
-   git clone https://github.com/yourusername/ocr-pipeline.git
-   cd ocr-pipeline
-   ```
-
-2. **Sync dependencies** (creates virtual environment automatically):
-
-   ```bash
-   # Install all dependencies and create .venv
-   uv sync
-
-   # Or with development dependencies
-   uv sync --extra dev
-   ```
-
-3. **Verify installation**:
-
-   ```bash
-   # Test imports
-   uv run python -c "import cv2; print(f'OpenCV: {cv2.__version__}')"
-   uv run python -c "from paddleocr import PaddleOCR; print('PaddleOCR: OK')"
-   uv run python -c "from ocr_pipeline import OCRPipeline; print('Pipeline: OK')"
-   ```
-
-4. **Start the API server**:
-
-   ```bash
-   # Using uv run
-   uv run ocr-pipeline-api
-
-   # Or directly with uvicorn
-   uv run uvicorn ocr_pipeline.api.server:app --host 0.0.0.0 --port 8000
-   ```
-
-   The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs`.
-
-### Alternative: Setup with pip
+### Troubleshooting
 
 <details>
-<summary>Click to expand legacy pip installation</summary>
+<summary><b>Installation fails with "command not found: uv"</b></summary>
+
+After installing UV, restart your terminal or run:
+
+```bash
+source $HOME/.cargo/env  # Linux/macOS
+```
+
+</details>
+
+<details>
+<summary><b>Error: "No module named 'setuptools'"</b></summary>
+
+This has been fixed in the latest version. Make sure you have the latest `pyproject.toml`:
+
+```bash
+git pull origin main
+uv sync --refresh
+```
+
+</details>
+
+<details>
+<summary><b>PaddleOCR import fails or crashes</b></summary>
+
+This is usually due to OpenCV version conflicts. The project pins `opencv-python<=4.6.0.66` for compatibility:
+
+```bash
+# Verify correct version is installed
+uv run python -c "import cv2; print(cv2.__version__)"
+# Should show 4.6.0.66 or lower
+```
+
+</details>
+
+<details>
+<summary><b>API server won't start</b></summary>
+
+Make sure port 8000 is not already in use:
+
+```bash
+# Check if port is in use
+lsof -i :8000  # Linux/macOS
+netstat -ano | findstr :8000  # Windows
+
+# Use a different port
+uv run uvicorn ocr_pipeline.api.server:app --port 8080
+```
+
+</details>
+
+---
+
+### Alternative: Manual Installation with pip
+
+<details>
+<summary><b>Click to expand pip installation (not recommended)</b></summary>
 
 1. **Clone and navigate**:
 
