@@ -30,7 +30,6 @@ from .classification import DocumentClassifier
 from ..segmentation import SegmentationPipeline, Region
 from ..validation.spatial_validator import SpatialValidator
 from ..validation.business_rules import BusinessRuleValidator
-from ..templates.pipeline import TemplatePipeline
 
 
 @dataclass
@@ -123,9 +122,6 @@ class OCRPipeline:
         self.segmentation_pipeline = SegmentationPipeline(self.config.get('segmentation', {}))
         self.spatial_validator = SpatialValidator(self.config)
         self.business_rule_validator = BusinessRuleValidator(self.config.get('business_rules', {}))
-        
-        # Initialize Template Pipeline (New Hybrid Mode)
-        self.template_pipeline = TemplatePipeline(self.config)
         
         self.logger.info("OCR Pipeline initialized successfully")
     
@@ -224,85 +220,6 @@ class OCRPipeline:
             processed_image = preprocessing_result['processed_image']
             stage_time = (time.time() - stage_start) * 1000
             self.logger.info(f"Stage 2: Image Preprocessing - completed in {stage_time:.0f}ms")
-
-            
-            # Stage 2.5: Template-Based Extraction (Hybrid Path)
-            self.logger.debug("Stage 2.5: Template-Based Extraction - DISABLED by user request")
-            # template_name, template_data, template_conf = self.template_pipeline.process(processed_image)
-            template_name, template_data, template_conf = None, None, 0.0
-            
-            if template_name and template_conf > 0.8 and template_data:
-                self.logger.info(f"Template '{template_name}' matched with high confidence ({template_conf:.2f}). Using template result.")
-                
-                # Construct result from template data
-                # We skip the rest of the expensive heavy pipeline
-                processing_time = time.time() - start_time
-                
-                # Create a synthetic confidence object (mostly high scores)
-                synth_confidence = DocumentConfidence(
-                    final_score=template_conf,
-                    ocr_confidence_score=0.95, # Region OCR is usually cleaner
-                    regex_score=1.0,
-                    fuzzy_score=1.0,
-                    layout_score=1.0,
-                    kv_score=1.0,
-                    consistency_score=1.0, 
-                    schema_score=1.0,
-                    distribution_score=1.0,
-                    spatial_compactness_score=1.0,
-                    image_quality_score=quality_metrics.composite_score
-                )
-                
-                # Create Decision
-                decision_result = DecisionResult(
-                    decision=Decision.ACCEPT,
-                    confidence_score=template_conf,
-                    reasons=[f"Matched template: {template_name}"],
-                    hard_rejection=False
-                )
-                
-                # Build structured document from template data
-                doc_type = template_name.split('_')[0] if template_name else "auto"
-                field_confs = {k: template_conf for k in template_data}
-                
-                structured_doc = None
-                if doc_type == 'aadhaar':
-                    structured_doc = DocumentBuilder.build_aadhaar(template_data, field_confs)
-                elif doc_type == 'pan':
-                    structured_doc = DocumentBuilder.build_pan(template_data, field_confs)
-                elif doc_type == 'vehicle_rc' or doc_type == 'rc': # handle 'rc' alias if needed
-                    structured_doc = DocumentBuilder.build_rc(template_data, field_confs)
-                
-                if structured_doc:
-                    structured_doc.template_used = template_name
-                    structured_doc.template_confidence = template_conf
-                    structured_doc.overall_confidence = template_conf
-                    structured_doc.decision = Decision.ACCEPT
-
-                return PipelineResult(
-                    document_path=str(image_path),
-                    document_type=doc_type,
-                    decision=decision_result.decision.value,
-                    confidence=synth_confidence,
-                    decision_result=decision_result,
-                    extracted_fields=template_data,
-                    quality_metrics=quality_metrics.to_dict(),
-                    ocr_stats={
-                        'method': 'template', 
-                        'regions_count': len(template_data),
-                        'template_score': template_conf,
-                        'fallback_score': None
-                    },
-                    full_text="[Template Extraction - Full Text Not Assembled]", 
-                    processing_time=processing_time,
-                    error=None,
-                    regions_detected=num_regions,
-                    region_selected=region_info,
-                    multi_document_flag=multi_document_flag,
-                    structured_document=structured_doc
-                )
-                
-            self.logger.info("Template matching low confidence or failed. Falling back to Full-Document OCR.")
 
             # Stage 3: OCR
             stage_start = time.time()
@@ -595,9 +512,7 @@ class OCRPipeline:
                 quality_metrics=quality_metrics.to_dict(),
                 ocr_stats={
                     **primary_ocr_result.get_stats(),
-                    'method': 'fallback_ocr',
-                    'template_score': template_conf,
-                    'fallback_score': document_confidence.final_score
+                    'method': 'ocr'
                 },
                 full_text=primary_ocr_result.full_text,
                 processing_time=processing_time,
