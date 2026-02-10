@@ -47,6 +47,9 @@ dependencies = [
     "uvicorn>=0.15.0",
     "python-multipart>=0.0.5",
     "requests>=2.26.0",
+
+    # Build/Runtime utilities (needed by transitive deps like paddleocr)
+    "setuptools>=61.0",
 ]
 
 # Optional dependencies for development and testing
