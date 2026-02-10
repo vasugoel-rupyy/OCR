@@ -157,13 +157,17 @@ class OCRPipeline:
             image_shape = image.shape[:2]
             
             # Stage 1: Image Quality Gate
+            stage_start = time.time()
             self.logger.debug("Stage 1: Image Quality Assessment")
             quality_metrics = self.quality_assessor.assess(image)
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 1: Image Quality Assessment - completed in {stage_time:.0f}ms")
             
             if not quality_metrics.passed:
                 self.logger.warning(f"Image failed quality gate: {quality_metrics.failure_reasons}")
             
             # Stage 1.5: Document Detection & Segmentation (NEW)
+            stage_start = time.time()
             self.logger.debug("Stage 1.5: Document Detection & Segmentation")
             
             # Run lightweight OCR for text clustering (if enabled)
@@ -180,7 +184,9 @@ class OCRPipeline:
             # Detect document regions
             detected_regions = self.segmentation_pipeline.detect_regions(image, ocr_boxes_for_clustering)
             num_regions = len(detected_regions)
+            stage_time = (time.time() - stage_start) * 1000
             
+            self.logger.info(f"Stage 1.5: Document Detection & Segmentation - completed in {stage_time:.0f}ms")
             self.logger.info(f"Detected {num_regions} document region(s)")
             
             # Determine if multiple documents detected
@@ -188,6 +194,7 @@ class OCRPipeline:
             conflicting_schemas = False
             
             # Stage 2: Preprocessing & Correction
+            stage_start = time.time()
             self.logger.debug("Stage 2: Image Preprocessing")
             
             # Select region to process
@@ -215,6 +222,8 @@ class OCRPipeline:
             # Preprocess the selected region
             preprocessing_result = self.preprocessing_pipeline.process(region_image, save_intermediates)
             processed_image = preprocessing_result['processed_image']
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 2: Image Preprocessing - completed in {stage_time:.0f}ms")
 
             
             # Stage 2.5: Template-Based Extraction (Hybrid Path)
@@ -296,13 +305,17 @@ class OCRPipeline:
             self.logger.info("Template matching low confidence or failed. Falling back to Full-Document OCR.")
 
             # Stage 3: OCR
+            stage_start = time.time()
             self.logger.debug("Stage 3: OCR Extraction")
             
             # Run standard OCR first (needed for classification and general text)
             ocr_result = self.ocr_engine.extract_text(processed_image)
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 3: OCR Extraction - completed in {stage_time:.0f}ms")
             
             # Auto-classify if needed
             if document_type == 'auto':
+                stage_start = time.time()
                 self.logger.info("Auto-detecting document type...")
                 
                 # If standard pass failed to find text, it might be a challenging ID document
@@ -335,6 +348,8 @@ class OCRPipeline:
                         self.logger.info(f"Re-classification scores: {scores}")
 
                 document_type = document_type_candidate
+                stage_time = (time.time() - stage_start) * 1000
+                self.logger.info(f"Stage 4: Document Classification - completed in {stage_time:.0f}ms")
                 self.logger.info(f"Detected document type: {document_type} (score: {max_score})")
             
             primary_ocr_result = ocr_result
@@ -376,8 +391,9 @@ class OCRPipeline:
             # Calculate OCR confidence score
             ocr_confidence_score = self.ocr_engine.calculate_ocr_confidence_score(primary_ocr_result)
             
-            # Stage 4: Document-Specific Processing
-            self.logger.debug("Stage 4: Document-Specific Processing")
+            # Stage 5: Document-Specific Field Extraction
+            stage_start = time.time()
+            self.logger.debug("Stage 5: Field Extraction")
             
             # Get appropriate extractor
             extractor = self._get_extractor(document_type)
@@ -411,6 +427,8 @@ class OCRPipeline:
             
             # Update main ocr_result to be the primary one for reporting
             ocr_result = primary_ocr_result
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 5: Field Extraction - completed in {stage_time:.0f}ms (found {len(extracted_fields)} fields)")
             
             # Check if mandatory fields are present
             required_fields = self._get_required_fields(document_type)
@@ -426,8 +444,9 @@ class OCRPipeline:
             # Consistency score (simplified - all fields present = high score)
             consistency_score = 1.0 if mandatory_fields_present else 0.5
             
-            # Stage 5: Advanced Validation Layer
-            self.logger.debug("Stage 5: Post-OCR Validation")
+            # Stage 6: Advanced Validation & Fuzzy Matching
+            stage_start = time.time()
+            self.logger.debug("Stage 6: Post-OCR Validation & Fuzzy Matching")
             
             # 5.1 Token Normalization (in-place or separate? keeping raw text for now, using norm helper)
             # 5.2 Regex Score (Redundant with Schema Score in weighted model, setting to 1.0 or same as schema)
@@ -496,8 +515,12 @@ class OCRPipeline:
                     # This ensures DecisionEngine sees it as a data completeness failure
                     mandatory_fields_present = False
 
-            # Stage 6: Multi-Stage Confidence Scoring
-            self.logger.debug("Stage 6: Confidence Scoring")
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 6: Validation & Fuzzy Matching - completed in {stage_time:.0f}ms")
+            
+            # Stage 7: Multi-Stage Confidence Scoring
+            stage_start = time.time()
+            self.logger.debug("Stage 7: Confidence Scoring")
             document_confidence = self.confidence_scorer.calculate_document_confidence(
                 image_quality_score=quality_metrics.composite_score,
                 ocr_confidence_score=ocr_confidence_score,
@@ -510,12 +533,15 @@ class OCRPipeline:
                 distribution_score=distribution_score,
                 spatial_compactness_score=spatial_score
             )
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 7: Confidence Scoring - completed in {stage_time:.0f}ms (score: {document_confidence.final_score:.3f})")
             
             # Calculate non-alphanumeric ratio
             non_alphanumeric_ratio = self._calculate_non_alphanumeric_ratio(ocr_result.full_text)
             
-            # Stage 7: Decision
-            self.logger.debug("Stage 7: Decision Making")
+            # Stage 8: Decision Making
+            stage_start = time.time()
+            self.logger.debug("Stage 8: Decision Making")
             decision_result = self.decision_engine.make_decision(
                 document_confidence=document_confidence,
                 quality_passed=quality_metrics.passed,
@@ -526,6 +552,8 @@ class OCRPipeline:
                 conflicting_schemas=conflicting_schemas,
                 business_rule_failures=business_reasons
             )
+            stage_time = (time.time() - stage_start) * 1000
+            self.logger.info(f"Stage 8: Decision Making - completed in {stage_time:.0f}ms (decision: {decision_result.decision.value})")
             
             processing_time = time.time() - start_time
             

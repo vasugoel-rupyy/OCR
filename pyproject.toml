@@ -1,0 +1,109 @@
+[project]
+name = "ocr-pipeline"
+version = "1.2.0"
+description = "Production-ready self-hosted OCR pipeline with structured Pydantic outputs for ID documents"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Your Organization", email = "your.email@example.com" }
+]
+keywords = ["ocr", "paddleocr", "document-processing", "aadhaar", "pan", "vehicle-rc", "india"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+# Core dependencies
+dependencies = [
+    # Core OCR and Image Processing
+    # Note: opencv-python pinned to <=4.6.0.66 due to paddleocr==2.7.3 requirement
+    "opencv-python<=4.6.0.66",
+    "paddlepaddle==2.6.2",
+    "paddleocr==2.7.3",
+    "pillow>=10.0.0",
+    "numpy<2.0.0",
+    "scipy>=1.11.0",
+    "scikit-learn>=1.3.0",
+    
+    # Configuration and Data Handling
+    "pyyaml>=6.0.1",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    
+    # Utilities
+    "python-dateutil>=2.8.2",
+    "tqdm>=4.66.0",
+    "rapidfuzz>=3.0.0",
+    
+    # API Server
+    "fastapi>=0.68.0",
+    "uvicorn>=0.15.0",
+    "python-multipart>=0.0.5",
+    "requests>=2.26.0",
+]
+
+# Optional dependencies for development and testing
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-benchmark>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Console scripts / entry points
+[project.scripts]
+ocr-pipeline-api = "ocr_pipeline.api.server:main"
+
+# URLs
+[project.urls]
+Homepage = "https://github.com/yourusername/ocr-pipeline"
+Repository = "https://github.com/yourusername/ocr-pipeline"
+Issues = "https://github.com/yourusername/ocr-pipeline/issues"
+
+# Build system configuration (PEP 517/518)
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Hatchling build configuration
+[tool.hatchling.build.targets.wheel]
+packages = ["ocr_pipeline"]
+
+[tool.hatchling.build.targets.sdist]
+include = [
+    "/ocr_pipeline",
+    "/config.yaml",
+    "/README.md",
+    "/imghdr.py",
+]
+
+# Dependency groups (modern uv syntax)
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-benchmark>=4.0.0",
+]
+
+# Black code formatting
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "--verbose --cov=ocr_pipeline --cov-report=term-missing"

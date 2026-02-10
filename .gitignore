@@ -4,11 +4,13 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv/
 env/
 venv/
 *.egg-info/
 dist/
 build/
+__pypackages__/
 
 # Testing
 .pytest_cache/
