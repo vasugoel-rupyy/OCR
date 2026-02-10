@@ -3,19 +3,15 @@
 import sys
 import os
 
-# Python 3.13+ compatibility: Make imghdr available before any imports
-# This must happen before paddleocr is imported
+# Python 3.13+ compatibility: imghdr.py in root provides the shim
+# PaddleOCR will import it automatically from the package root
 if sys.version_info >= (3, 13):
     try:
         import imghdr
     except ImportError:
-        # Add compat directory to path and import our shim
-        compat_path = os.path.join(os.path.dirname(__file__), 'compat')
-        if compat_path not in sys.path:
-            sys.path.insert(0, compat_path)
-        # Import and register in sys.modules so paddleocr can find it
-        from .compat import imghdr
-        sys.modules['imghdr'] = imghdr
+        # The root imghdr.py should be available via package root
+        # If not found, PaddleOCR will fail on import
+        pass
 
 __version__ = "1.0.0"
 
