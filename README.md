@@ -36,18 +36,27 @@ The system explains its decisions via a weighted confidence score [0-1] based on
 
 ### Quick Start (3 Steps)
 
-```bash
+````bash
 # 1. Install UV package manager
+
+# Linux/macOS:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
+# Windows (PowerShell):
+
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
 # 2. Clone and install
+
 git clone https://github.com/yourusername/ocr-pipeline.git
 cd ocr-pipeline
 uv sync
 
+# 'uv sync' automatically creates and manages a virtual environment (.venv) for you.
+
 # 3. Run the API server
+
 uv run ocr-pipeline-api
-```
 
 Visit `http://localhost:8000/docs` to access the API documentation.
 
@@ -64,7 +73,7 @@ Most modern systems have these already. Install only if you encounter issues:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y ffmpeg libsm6 libxext6
-```
+````
 
 \*\*macOS (Homebrew):
 
@@ -153,11 +162,28 @@ uv run uvicorn ocr_pipeline.api.server:app --port 8080
 2. **Create virtual environment**:
 
    ```bash
+   # Create virtual environment
+
    python3 -m venv .venv
 
    # Activate it
-   source .venv/bin/activate  # macOS/Linux
-   .venv\Scripts\activate     # Windows
+
+   # macOS/Linux:
+
+   source .venv/bin/activate
+
+   # Windows (Command Prompt):
+
+   .venv\Scripts\activate.bat
+
+   # Windows (PowerShell):
+
+   .venv\Scripts\Activate.ps1
+
+   ```
+
+   ```
+
    ```
 
 3. **Install dependencies**:
