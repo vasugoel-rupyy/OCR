@@ -36,27 +36,34 @@ The system explains its decisions via a weighted confidence score [0-1] based on
 
 ### Quick Start (3 Steps)
 
-````bash
-# 1. Install UV package manager
+1. **Install UV package manager**
 
-# Linux/macOS:
-curl -LsSf https://astral.sh/uv/install.sh | sh
+   **Linux/macOS:**
 
-# Windows (PowerShell):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+   **Windows (PowerShell):**
 
-# 2. Clone and install
+   ```powershell
+   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
 
-git clone https://github.com/yourusername/ocr-pipeline.git
-cd ocr-pipeline
-uv sync
+2. **Clone and install**
 
-# 'uv sync' automatically creates and manages a virtual environment (.venv) for you.
+   ```bash
+   git clone https://github.com/yourusername/ocr-pipeline.git
+   cd ocr-pipeline
+   uv sync
+   # 'uv sync' automatically creates and manages a virtual environment (.venv)
+   ```
 
-# 3. Run the API server
+3. **Run the API server**
 
-uv run ocr-pipeline-api
+   ```bash
+   uv run ocr-pipeline-api
+   ```
 
 Visit `http://localhost:8000/docs` to access the API documentation.
 
@@ -73,7 +80,7 @@ Most modern systems have these already. Install only if you encounter issues:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y ffmpeg libsm6 libxext6
-````
+```
 
 \*\*macOS (Homebrew):
 
@@ -162,28 +169,12 @@ uv run uvicorn ocr_pipeline.api.server:app --port 8080
 2. **Create virtual environment**:
 
    ```bash
-   # Create virtual environment
-
    python3 -m venv .venv
 
-   # Activate it
-
-   # macOS/Linux:
-
-   source .venv/bin/activate
-
-   # Windows (Command Prompt):
-
-   .venv\Scripts\activate.bat
-
-   # Windows (PowerShell):
-
-   .venv\Scripts\Activate.ps1
-
-   ```
-
-   ```
-
+   # Activate it:
+   source .venv/bin/activate      # Linux/macOS
+   .venv\Scripts\activate.bat     # Windows (Cmd)
+   .venv\Scripts\Activate.ps1     # Windows (PowerShell)
    ```
 
 3. **Install dependencies**:
