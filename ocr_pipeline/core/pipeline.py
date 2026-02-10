@@ -4,8 +4,9 @@ Coordinates all stages: quality gate → preprocessing → OCR → validation �
 """
 
 import logging
+import re
 from pathlib import Path
-from typing import Dict, Union, Optional, List
+from typing import Dict, Union, Optional, List, Callable
 from dataclasses import dataclass, field
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +27,7 @@ from ..documents.pan import PanDocument
 from ..documents.vehicle_rc import RcDocument
 from ..builders.document_builder import DocumentBuilder
 from ..scoring import ConfidenceScorer, DecisionEngine, DocumentConfidence, DecisionResult, Decision
+from ..scoring.confidence import FieldConfidence
 from .classification import DocumentClassifier
 from ..segmentation import SegmentationPipeline, Region
 from ..validation.spatial_validator import SpatialValidator
@@ -438,6 +440,28 @@ class OCRPipeline:
             # Stage 7: Multi-Stage Confidence Scoring
             stage_start = time.time()
             self.logger.debug("Stage 7: Confidence Scoring")
+            # Calculate per-field confidence scores
+            field_scores = {}
+            semantic_validators = self._get_semantic_validators(document_type)
+            for field_name, field_value in extracted_fields.items():
+                # Skip non-string fields (e.g., signature_present bool)
+                if not isinstance(field_value, str):
+                    continue
+                # Get per-field OCR confidence from matching words
+                field_ocr_conf = self._compute_field_ocr_confidence(
+                    field_value, ocr_result, ocr_confidence_score
+                )
+                # Get semantic validity from field-specific validator
+                validator = semantic_validators.get(field_name)
+                semantic_valid = validator(field_value) if validator else True
+                
+                field_scores[field_name] = self.confidence_scorer.calculate_field_confidence(
+                    field_name=field_name,
+                    ocr_confidence=field_ocr_conf * 100.0,  # expects [0, 100]
+                    semantic_valid=semantic_valid,
+                    positional_valid=True
+                )
+            
             document_confidence = self.confidence_scorer.calculate_document_confidence(
                 image_quality_score=quality_metrics.composite_score,
                 ocr_confidence_score=ocr_confidence_score,
@@ -448,7 +472,8 @@ class OCRPipeline:
                 consistency_score=consistency_score,
                 schema_score=schema_score,
                 distribution_score=distribution_score,
-                spatial_compactness_score=spatial_score
+                spatial_compactness_score=spatial_score,
+                field_scores=field_scores
             )
             stage_time = (time.time() - stage_start) * 1000
             self.logger.info(f"Stage 7: Confidence Scoring - completed in {stage_time:.0f}ms (score: {document_confidence.final_score:.3f})")
@@ -479,8 +504,10 @@ class OCRPipeline:
                 f"(score: {document_confidence.final_score:.3f}, time: {processing_time:.2f}s)"
             )
             
-            # Build structured document
-            field_confs = {k: ocr_confidence_score for k in extracted_fields}
+            # Build structured document using per-field composite scores
+            field_confs = {
+                k: fs.composite_score for k, fs in field_scores.items()
+            }
             structured_doc = None
             
             if document_type == 'aadhaar':
@@ -688,6 +715,96 @@ class OCRPipeline:
         total_count = len(text)
         
         return 1.0 - (alphanumeric_count / total_count)
+
+    def _compute_field_ocr_confidence(self, field_value: str, ocr_result, fallback: float) -> float:
+        """Compute OCR confidence for a specific field by matching its value to OCR words.
+        
+        Finds the OCR words whose text appears in the field value and returns
+        their average confidence.  Falls back to the document-level OCR
+        confidence when no word-level match is found.
+        
+        Args:
+            field_value: The extracted field string
+            ocr_result: OCR result with word-level data
+            fallback: Document-level OCR confidence to use when no matches found
+            
+        Returns:
+            Confidence score in [0, 1]
+        """
+        if not field_value or not ocr_result.words:
+            return fallback
+        
+        field_lower = field_value.lower().replace(' ', '')
+        matched_confidences = []
+        
+        for word in ocr_result.words:
+            word_text = word.text.strip().lower()
+            if not word_text:
+                continue
+            # Match if the word appears inside the field value or vice-versa
+            if word_text in field_lower or field_lower in word_text:
+                matched_confidences.append(word.confidence / 100.0 if word.confidence > 1.0 else word.confidence)
+        
+        if matched_confidences:
+            return sum(matched_confidences) / len(matched_confidences)
+        return fallback
+    
+    def _get_semantic_validators(self, document_type: str) -> Dict[str, Callable[[str], bool]]:
+        """Return per-field semantic validators for a document type.
+        
+        Each validator returns True if the field value is semantically valid.
+        
+        Args:
+            document_type: Type of document
+            
+        Returns:
+            Dict mapping field names to validator callables
+        """
+        validators: Dict[str, Callable[[str], bool]] = {}
+        
+        if document_type == 'aadhaar':
+            validators['aadhaar_number'] = lambda v: bool(
+                re.match(r'^[2-9]\d{11}$', re.sub(r'[\s.-]+', '', v))
+            )
+            validators['date_of_birth'] = lambda v: bool(
+                re.search(r'\d{2}[/.-]\d{2}[/.-]\d{4}', v)
+            )
+            validators['gender'] = lambda v: v.upper() in ('MALE', 'FEMALE', 'TRANSGENDER', 'पुरुष', 'महिला')
+            validators['pin_code'] = lambda v: bool(re.match(r'^\d{6}$', v.strip()))
+            validators['vid'] = lambda v: bool(re.match(r'^\d{16}$', re.sub(r'\s+', '', v)))
+            validators['address'] = lambda v: (
+                # Must be at least 20 chars (real addresses are longer)
+                len(v) >= 20
+                # Must be mostly alpha/space/comma/dash (address-like)
+                and sum(c.isalpha() or c in ' ,.-/' for c in v) / max(len(v), 1) > 0.5
+                # Must not contain known non-address indicators
+                and not re.search(r'\b(VID|MALE|FEMALE|पुरुष|महिला)\b', v, re.IGNORECASE)
+                # Must not be mostly digits (Aadhaar/VID numbers)
+                and sum(c.isdigit() for c in v) / max(len(v), 1) < 0.5
+            )
+            
+        elif document_type == 'pan':
+            validators['pan_number'] = lambda v: bool(
+                re.match(r'^[A-Z]{5}\d{4}[A-Z]$', v.strip().upper())
+            )
+            validators['date_of_birth'] = lambda v: bool(
+                re.search(r'\d{2}[/.-]\d{2}[/.-]\d{4}', v)
+            )
+            
+        elif document_type == 'vehicle_rc':
+            validators['registration_number'] = lambda v: bool(
+                re.match(r'^[A-Z]{2}\s*\d{1,2}\s*[A-Z]{0,3}\s*\d{1,4}$', v.strip().upper())
+            )
+            validators['engine_number'] = lambda v: len(v.strip()) >= 5
+            validators['chassis_number'] = lambda v: len(v.strip()) >= 5
+            validators['registration_date'] = lambda v: bool(
+                re.search(r'\d{2}[/.-]\d{2}[/.-]\d{4}', v)
+            )
+            validators['fuel_type'] = lambda v: v.upper() in (
+                'PETROL', 'DIESEL', 'CNG', 'LPG', 'ELECTRIC', 'HYBRID'
+            )
+        
+        return validators
 
 
 def main():

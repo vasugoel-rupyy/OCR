@@ -391,10 +391,17 @@ class AadhaarExtractor:
             # Address usually in bottom half
             bottom_lines = ocr_result.lines[len(ocr_result.lines)//2:]
             address_parts = []
+            # Patterns that indicate a line is NOT part of an address
+            non_address_re = re.compile(
+                r'\b(VID|MALE|FEMALE|TRANSGENDER|aadhaar|आधार|पुरुष|महिला)\b'
+                r'|\d{4}\s*\d{4}\s*\d{4}'   # Aadhaar number pattern
+                r'|\d{16}',                   # VID pattern
+                re.IGNORECASE
+            )
             for line in bottom_lines:
                 text_line = line.text.strip()
-                # Skip lines with just numbers or keywords
-                if len(text_line) > 10 and not text_line.isdigit():
+                # Skip short lines, pure-digit lines, and non-address lines
+                if len(text_line) > 10 and not text_line.isdigit() and not non_address_re.search(text_line):
                     address_parts.append(text_line)
             
             if address_parts:
