@@ -150,40 +150,56 @@ class VehicleRCExtractor:
         return fields
     
     def _extract_registration_number(self, text: str, ocr_result: OCRResult) -> Optional[str]:
-        """Extract vehicle registration number.
+        """Extract vehicle registration number with enhanced patterns.
         
-        Strict mode: Returns None if multiple conflicting registration numbers are found.
+        Uses multiple strategies including proximity-based extraction.
         """
-        # Collect all candidates
+        # Normalize text
+        normalized_text = self._normalize_ocr_text(text)
         candidates = set()
         
-        # Strategy 1: Standard format with hyphens or spaces
-        pattern1 = r'\b([A-Z]{2})\s*[-]?\s*(\d{2})\s*[-]?\s*([A-Z]{1,2})\s*[-]?\s*(\d{4})\b'
-        matches = re.findall(pattern1, text.upper())
+        # Strategy 1: After "Registration" label with flexible spacing
+        label_patterns = [
+            r'(?:reg(?:istration)?|regn)\.?\s*(?:no|number|#)?[:\s.-]*([A-Z]{2}[\s-]*\d{2}[\s-]*[A-Z]{1,2}[\s-]*\d{4})',
+        ]
+        
+        for pattern in label_patterns:
+            matches = re.findall(pattern, normalized_text, re.IGNORECASE)
+            for match in matches:
+                cleaned = re.sub(r'[\s-]+', '', match.upper())
+                if self._validate_registration_number(cleaned):
+                    candidates.add(self._format_registration_number(cleaned))
+        
+        # Strategy 2: Standard format with flexible spacing
+        pattern_std = r'\b([A-Z]{2})\s*[-]?\s*(\d{2})\s*[-]?\s*([A-Z]{1,2})\s*[-]?\s*(\d{4})\b'
+        matches = re.findall(pattern_std, normalized_text)
         
         for match in matches:
             reg_num = ''.join(match)
             if self._validate_registration_number(reg_num):
-                 candidates.add(f"{match[0]}-{match[1]}-{match[2]}-{match[3]}")
+                candidates.add(f"{match[0]}-{match[1]}-{match[2]}-{match[3]}")
         
-        # Strategy 2: Continuous format (no separators)
-        pattern2 = r'\b([A-Z]{2}\d{2}[A-Z]{1,2}\d{4})\b'
-        matches = re.findall(pattern2, text.upper())
+        # Strategy 3: Continuous format
+        pattern_cont = r'\b([A-Z]{2}\d{2}[A-Z]{1,2}\d{4})\b'
+        matches = re.findall(pattern_cont, normalized_text)
         for match in matches:
             if self._validate_registration_number(match):
-                # Standardize format
-                state = match[:2]
-                rto = match[2:4]
-                series_end = 4
-                while series_end < len(match) and match[series_end].isalpha():
-                    series_end += 1
-                series = match[4:series_end]
-                number = match[series_end:]
-                candidates.add(f"{state}-{rto}-{series}-{number}")
+                candidates.add(self._format_registration_number(match))
         
-        # Strict enforcement
+        # Strategy 4: Handle OCR spacing issues (e.g., "D L 0 1 A B 1 2 3 4")
+        spaced_pattern = r'([A-Z])\s+([A-Z])\s+\d\s+\d\s+[A-Z](?:\s+[A-Z])?\s+\d\s+\d\s+\d\s+\d'
+        spaced_matches = re.findall(spaced_pattern, normalized_text)
+        for match in spaced_matches:
+            # Extract the spaced sequence and collapse it
+            full_match = re.search(r'[A-Z](?:\s+[A-Z0-9]){8,12}', normalized_text)
+            if full_match:
+                collapsed = re.sub(r'\s+', '', full_match.group())
+                if self._validate_registration_number(collapsed):
+                    candidates.add(self._format_registration_number(collapsed))
+        
+        # Strict enforcement: reject if multiple different values found
         if len(candidates) > 1:
-            return None # Reject due to ambiguity
+            return None
         if len(candidates) == 1:
             return list(candidates)[0]
             
@@ -309,7 +325,7 @@ class VehicleRCExtractor:
         return True
     
     def _extract_make_model(self, text: str) -> Optional[str]:
-        """Extract vehicle make and model.
+        """Extract vehicle make and model with enhanced patterns.
         
         Args:
             text: Full OCR text
@@ -317,24 +333,35 @@ class VehicleRCExtractor:
         Returns:
             Make and model or None
         """
-        # Look for make/model after keywords
+        normalized_text = self._normalize_ocr_text(text)
+        
+        # Multiple pattern strategies
         make_patterns = [
-            r'(?:make|maker|manufacturer)\s*:?\s*([A-Za-z0-9\s]{3,30})',
-            r'(?:model)\s*:?\s*([A-Za-z0-9\s]{3,30})',
+            # Standard patterns
+            r'(?:make|maker|manufacturer)[:\s.-]*([A-Za-z0-9\s]{3,50})',
+            r'(?:model)[:\s.-]*([A-Za-z0-9\s]{3,50})',
+            # Common abbreviations in RCs
+            r'(?:M/M|MV|make/model)[:\s.-]*([A-Za-z0-9\s]{3,50})',
+            # Vehicle model specifically
+            r'(?:vehicle.*?model)[:\s.-]*([A-Za-z0-9\s]{3,50})',
         ]
         
         for pattern in make_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, normalized_text, re.IGNORECASE)
             if match:
                 make_model = match.group(1).strip()
+                # Clean up and normalize spaces
                 make_model = re.sub(r'\s+', ' ', make_model)
-                if len(make_model) >= 3:
-                    return make_model
+                # Remove trailing special characters
+                make_model = re.sub(r'[:\s.-]+$', '', make_model)
+                # Should have reasonable length and content
+                if len(make_model) >= 3 and re.search(r'[A-Za-z]', make_model):
+                    return make_model.upper()
         
         return None
     
     def _extract_engine_number(self, text: str) -> Optional[str]:
-        """Extract engine number.
+        """Extract engine number with enhanced patterns.
         
         Args:
             text: Full OCR text
@@ -342,23 +369,31 @@ class VehicleRCExtractor:
         Returns:
             Engine number or None
         """
-        # Look for engine number after keywords
+        normalized_text = self._normalize_ocr_text(text)
+        
+        # Multiple pattern strategies
         engine_patterns = [
-            r'(?:engine\s+(?:no|number)|e\s*no)\s*:?\s*([A-Z0-9]{6,20})',
+            r'(?:engine\s+(?:no|number)|e\s*no|eng\s*no)[:\s.-]*([A-Z0-9]{6,25})',
+            r'(?:engine)[:\s.-]*([A-Z0-9]{6,25})',
+            # Sometimes just "E:" or "E No:"
+            r'\bE\s*(?:NO)?[:\s.-]+([A-Z0-9]{6,25})',
         ]
         
         for pattern in engine_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, normalized_text, re.IGNORECASE)
             if match:
-                engine_no = match.group(1).strip()
-                # Engine numbers are typically alphanumeric, 6-20 characters
-                if re.match(r'^[A-Z0-9]{6,20}$', engine_no.upper()):
-                    return engine_no.upper()
+                engine_no = re.sub(r'\s+', '', match.group(1).upper())
+                # Engine numbers: alphanumeric, 6-25 characters
+                # Allow longer length for some manufacturers
+                if re.match(r'^[A-Z0-9]{6,25}$', engine_no):
+                    # Avoid false positives (chassis numbers often appear nearby)
+                    if len(engine_no) >= 6:
+                        return engine_no
         
         return None
     
     def _extract_chassis_number(self, text: str) -> Optional[str]:
-        """Extract chassis/VIN number.
+        """Extract chassis/VIN number with enhanced patterns.
         
         Args:
             text: Full OCR text
@@ -366,18 +401,27 @@ class VehicleRCExtractor:
         Returns:
             Chassis number or None
         """
-        # Look for chassis number after keywords
+        normalized_text = self._normalize_ocr_text(text)
+        
+        # Multiple pattern strategies
         chassis_patterns = [
-            r'(?:chassis\s+(?:no|number)|c\s*no|vin)\s*:?\s*([A-Z0-9]{10,20})',
+            r'(?:chassis\s+(?:no|number)|c\s*no|vin|ch\s*no)[:\s.-]*([A-Z0-9]{10,25})',
+            r'(?:chassis|vin)[:\s.-]*([A-Z0-9]{10,25})',
+            # Sometimes just "C:" or "C No:"
+            r'\bC\s*(?:NO)?[:\s.-]+([A-Z0-9]{10,25})',
+            # "Chassis No." or "Ch. No."
+            r'(?:ch\.?\s*no\.?)[:\s.-]*([A-Z0-9]{10,25})',
         ]
         
         for pattern in chassis_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, normalized_text, re.IGNORECASE)
             if match:
-                chassis_no = match.group(1).strip()
-                # Chassis numbers are typically alphanumeric, 10-20 characters
-                if re.match(r'^[A-Z0-9]{10,20}$', chassis_no.upper()):
-                    return chassis_no.upper()
+                chassis_no = re.sub(r'\s+', '', match.group(1).upper())
+                # Chassis/VIN: alphanumeric, 10-25 characters (VINs are typically 17)
+                if re.match(r'^[A-Z0-9]{10,25}$', chassis_no):
+                    # Valid chassis number
+                    if len(chassis_no) >= 10:
+                        return chassis_no
         
         return None
     
@@ -502,12 +546,31 @@ class VehicleRCExtractor:
         return None
         
     def _extract_hypothecation(self, text: str) -> Optional[str]:
-        """Extract financing bank (Hypothecation)."""
-        # Search for "HPA" or "Hypothecated"
-        match = re.search(r'(?:hypothecation|hypothecated|financed|hpa|hp)\s*(?:by|to|with)?\s*[:.-]?\s*([A-Z0-9\s.,&]+)', text, re.IGNORECASE)
-        if match:
-             val = match.group(1).strip()
-             if len(val) > 3: return val
+        """Extract financing bank (Hypothecation) with enhanced patterns."""
+        normalized_text = self._normalize_ocr_text(text)
+        
+        # Multiple pattern strategies
+        hyp_patterns = [
+            # Standard patterns
+            r'(?:hypothecation|hypothecated|financed)[:\s.-]*(?:to|by|with)?\s*([A-Z0-9\s.,&]{3,80})',
+            # Abbreviations
+            r'(?:hpa|hp|fin)[:\s.-]*(?:to|by|with)?\s*([A-Z0-9\s.,&]{3,80})',
+            # Financier label
+            r'(?:financier)[:\s.-]*([A-Z0-9\s.,&]{3,80})',
+        ]
+        
+        for pattern in hyp_patterns:
+            match = re.search(pattern, normalized_text, re.IGNORECASE)
+            if match:
+                val = match.group(1).strip()
+                # Clean up - stop at common next field indicators
+                val = re.split(r'(?:insurance|fitness|owner|validity)', val, maxsplit=1, flags=re.IGNORECASE)[0]
+                val = val.strip()
+                # Clean trailing punctuation
+                val = re.sub(r'[:\s.,&-]+$', '', val)
+                if len(val) > 3 and re.search(r'[A-Za-z]', val):
+                    return val.upper()
+        
         return None
         
     def _extract_fitness_date(self, text: str) -> Optional[str]:
@@ -525,5 +588,51 @@ class VehicleRCExtractor:
     def _extract_mfg_date(self, text: str) -> Optional[str]:
         """Extract Mfg Date (Month/Year)."""
         match = re.search(r'(?:mfg|manufacturing)\s*(?:date)?\s*[:.-]?\s*(\d{2}[/.-]\d{4}|\d{4})', text, re.IGNORECASE)
-        if match: return match.group(1) # Often just MM/YYYY, leave as is? normalize?
+        if match: return match.group(1)
         return None
+    
+    def _normalize_ocr_text(self, text: str) -> str:
+        """Normalize OCR text to handle common OCR issues.
+        
+        Args:
+            text: Raw OCR text
+            
+        Returns:
+            Normalized text
+        """
+        if not text:
+            return ""
+        
+        # Remove excessive spaces (but keep single spaces)
+        normalized = re.sub(r' {2,}', ' ', text)
+        
+        # Normalize line breaks
+        normalized = re.sub(r'\n+', '\n', normalized)
+        
+        return normalized.strip()
+    
+    def _format_registration_number(self, reg_num: str) -> str:
+        """Format registration number with standard hyphens.
+        
+        Args:
+            reg_num: Registration number without separators
+            
+        Returns:
+            Formatted registration number (XX-YY-AA-ZZZZ)
+        """
+        # Remove any existing separators
+        clean = re.sub(r'[\s-]+', '', reg_num.upper())
+        
+        # Format as XX-YY-AA-ZZZZ or XX-YY-A-ZZZZ
+        state = clean[:2]
+        rto = clean[2:4]
+        
+        # Find where series letters end and numbers begin
+        series_end = 4
+        while series_end < len(clean) and clean[series_end].isalpha():
+            series_end += 1
+        
+        series = clean[4:series_end]
+        number = clean[series_end:]
+        
+        return f"{state}-{rto}-{series}-{number}"

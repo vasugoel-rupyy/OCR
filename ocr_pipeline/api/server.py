@@ -7,11 +7,21 @@ import shutil
 import tempfile
 import os
 import logging
+import traceback
 from typing import Dict, Any
 
 from ..core.pipeline import OCRPipeline
 from ..utils import setup_logging
 from .models import OCRRequest, OCRResponse
+
+# Try to import PDF utilities
+try:
+    from ..utils_pdf import is_pdf, pdf_to_image_file, is_pdf_supported
+    PDF_AVAILABLE = is_pdf_supported()
+except ImportError:
+    PDF_AVAILABLE = False
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.warning("PDF support not available. Install pdf2image to enable PDF processing.")
 
 # Config
 setup_logging()
@@ -38,43 +48,75 @@ async def startup_event():
 
 
 async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
-    """Helper to process an image and return response data."""
+    """Helper to process an image/PDF and return response data."""
     if not pipeline:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
     
     tmp_path = None
+    tmp_image_path = None
+    
     try:
-        # 1. Download image
-        logger.info(f"Fetching image from: {image_url}")
+        # 1. Download file
+        logger.info(f"Fetching file from: {image_url}")
         response = requests.get(image_url, stream=True, timeout=15)
         response.raise_for_status()
         
         content_type = response.headers.get('content-type', '').lower()
-        suffix = ".jpg" 
-        if "png" in content_type: 
+        
+        # Determine file type and suffix
+        is_pdf_file = False
+        suffix = ".jpg"
+        
+        if "pdf" in content_type:
+            is_pdf_file = True
+            suffix = ".pdf"
+        elif "png" in content_type:
             suffix = ".png"
-        elif "jpeg" in content_type: 
+        elif "jpeg" in content_type or "jpg" in content_type:
             suffix = ".jpg"
-        elif "webp" in content_type: 
+        elif "webp" in content_type:
             suffix = ".webp"
-            
+        
+        # Download file
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
             shutil.copyfileobj(response.raw, tmp_file)
             tmp_path = tmp_file.name
         
-        logger.info(f"Image saved to {tmp_path} (Using doc_type: {doc_type})")
-
-        # 2. Process
-        logger.info(f"Running processing pipeline with type: {doc_type}")
-        result = pipeline.process_document(tmp_path, document_type=doc_type)
+        logger.info(f"File saved to {tmp_path} (Type: {content_type})")
         
-        # 3. Extract Reason
+        # 2. Handle PDF conversion if needed
+        final_image_path = tmp_path
+        
+        # Double check if it's actually a PDF by checking the file
+        if is_pdf_file or (PDF_AVAILABLE and is_pdf(tmp_path)):
+            if not PDF_AVAILABLE:
+                error_msg = "PDF file detected but pdf2image is not installed. Please install pdf2image and poppler-utils."
+                logger.error(error_msg)
+                raise HTTPException(status_code=400, detail=error_msg)
+            
+            logger.info("PDF detected, converting first page to image...")
+            try:
+                # Convert first page to image
+                tmp_image_path = pdf_to_image_file(tmp_path, dpi=300, page=1)
+                final_image_path = tmp_image_path
+                logger.info(f"PDF converted to image: {tmp_image_path}")
+            except Exception as pdf_error:
+                error_msg = f"Failed to convert PDF to image: {str(pdf_error)}"
+                error_trace = traceback.format_exc()
+                logger.error(f"{error_msg}\n{error_trace}")
+                raise HTTPException(status_code=400, detail=error_msg)
+        
+        # 3. Process with OCR pipeline
+        logger.info(f"Running processing pipeline with type: {doc_type}")
+        result = pipeline.process_document(final_image_path, document_type=doc_type)
+        
+        # 4. Extract reason
         reason = "-"
         if hasattr(result, 'decision_result') and result.decision_result:
             if result.decision_result.reasons:
                 reason = result.decision_result.reasons[0]
-            
-        # 4. Response
+        
+        # 5. Build response with raw OCR text
         response_data = OCRResponse(
             status="success",
             document_type=result.document_type,
@@ -86,24 +128,60 @@ async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
             extraction_method=result.ocr_stats.get('method', 'fallback_ocr'),
             template_confidence=result.ocr_stats.get('template_score'),
             fallback_confidence=result.ocr_stats.get('fallback_score'),
-            structured_document=result.structured_document
+            structured_document=result.structured_document,
+            raw_ocr_text=result.full_text,  # Include raw OCR text
+            error_details=None
         )
         
         logger.info(f"Processing complete: {result.decision} (Score: {response_data.confidence_score})")
+        logger.debug(f"Raw OCR text length: {len(result.full_text)} characters")
+        
         return response_data
         
     except requests.RequestException as e:
-        logger.error(f"Network error fetching image: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to fetch image: {str(e)}")
+        error_msg = f"Network error fetching file: {str(e)}"
+        error_trace = traceback.format_exc()
+        logger.error(f"{error_msg}\n{error_trace}")
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    
     except Exception as e:
-        logger.error(f"Processing failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = f"Processing failed: {str(e)}"
+        error_trace = traceback.format_exc()
+        logger.error(f"{error_msg}\n{error_trace}")
+        
+        # Return error response with details
+        return OCRResponse(
+            status="error",
+            document_type=doc_type,
+            decision="error",
+            confidence_score=0.0,
+            reason=error_msg,
+            extracted_fields={},
+            processing_time=0.0,
+            extraction_method="error",
+            raw_ocr_text=None,
+            error_details=error_trace
+        )
+    
     finally:
+        # Clean up temporary files
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
+                logger.debug(f"Removed temporary file: {tmp_path}")
             except Exception as e:
-                logger.warning(f"Failed to remove temp file: {e}")
+                logger.warning(f"Failed to remove temp file {tmp_path}: {e}")
+        
+        if tmp_image_path and os.path.exists(tmp_image_path) and tmp_image_path != tmp_path:
+            try:
+                os.remove(tmp_image_path)
+                logger.debug(f"Removed temporary image file: {tmp_image_path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove temp image file {tmp_image_path}: {e}")
 
 
 @app.post("/ocr/process_url", response_model=OCRResponse)

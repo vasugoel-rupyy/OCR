@@ -47,6 +47,9 @@ dependencies = [
     "uvicorn>=0.15.0",
     "python-multipart>=0.0.5",
     "requests>=2.26.0",
+    
+    # PDF Processing
+    "pdf2image>=1.16.0",
 
     # ONNX Runtime (required for stable inference, avoids macOS segfault)
     "onnxruntime>=1.24.0",

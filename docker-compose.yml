@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ocr-pipeline-api:
     build:
@@ -19,7 +17,13 @@ services:
       - LOG_LEVEL=INFO
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8000/docs', timeout=5)"]
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import requests; requests.get('http://localhost:8000/docs', timeout=5)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -28,8 +32,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
+          cpus: "2"
           memory: 4G
         reservations:
-          cpus: '1'
+          cpus: "1"
           memory: 2G
