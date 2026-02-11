@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  ocr-pipeline-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ocr-pipeline:latest
+    container_name: ocr-pipeline-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot-reload during development
+      - ./ocr_pipeline:/app/ocr_pipeline:ro
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      # Logging configuration
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8000/docs', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G

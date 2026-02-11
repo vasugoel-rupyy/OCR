@@ -19,15 +19,20 @@ class PaddleOCREngine:
         self.config = config
         paddle_config = config.get('paddle_ocr', {})
         
-        # Initialize PaddleOCR with ONNX Runtime backend
+        # Detect platform to determine inference backend
+        # macOS/Darwin: Use ONNX Runtime to avoid segfault with native Paddle
+        # Linux: Use native Paddle (stable and faster)
+        import platform
+        use_onnx = platform.system() == 'Darwin'  # True on macOS, False on Linux
+        
+        # Initialize PaddleOCR with appropriate backend
         # use_angle_cls=True allows detecting rotated text
-        # use_onnx=True bypasses native PaddlePaddle inference which segfaults on macOS
         self.ocr = PaddleOCR(
             use_angle_cls=paddle_config.get('use_angle_cls', True),
             lang=paddle_config.get('lang', 'en'),
             use_gpu=paddle_config.get('use_gpu', False),
             show_log=paddle_config.get('show_log', False),
-            use_onnx=True
+            use_onnx=use_onnx
         )
         
         self.min_word_confidence = config.get('min_word_confidence', 50)

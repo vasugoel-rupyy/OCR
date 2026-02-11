@@ -53,8 +53,8 @@ The system explains its decisions via a weighted confidence score [0-1] based on
 2. **Clone and install**
 
    ```bash
-   git clone https://github.com/yourusername/ocr-pipeline.git
-   cd ocr-pipeline
+   git clone https://github.com/vasugoel-rupyy/OCR.git
+   cd OCR
    uv sync
    # 'uv sync' automatically creates and manages a virtual environment (.venv)
    ```
@@ -65,9 +65,136 @@ The system explains its decisions via a weighted confidence score [0-1] based on
    uv run ocr-pipeline-api
    ```
 
+
 Visit `http://localhost:8000/docs` to access the API documentation.
 
 ---
+
+## 🐳 Docker Deployment (Recommended)
+
+**Docker is the recommended deployment method** to avoid platform-specific issues (like macOS segfaults) and ensure consistency across environments.
+
+### Quick Start with Docker
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/vasugoel-rupyy/OCR.git
+cd OCR
+
+# 2. Build and start the service
+docker compose up --build
+
+# 3. Access the API at http://localhost:8000/docs
+```
+
+That's it! The service will be running in a Linux container with all dependencies pre-configured.
+
+### Docker Commands
+
+**Build the image:**
+```bash
+docker build -t ocr-pipeline:latest .
+```
+
+**Run the container:**
+```bash
+docker run -d \
+  --name ocr-api \
+  -p 8000:8000 \
+  ocr-pipeline:latest
+```
+
+**View logs:**
+```bash
+docker logs -f ocr-api
+```
+
+**Stop the container:**
+```bash
+docker stop ocr-api
+docker rm ocr-api
+```
+
+### Development Workflow with Docker
+
+The `docker-compose.yml` is configured for hot-reload during development:
+
+```bash
+# Start in development mode (with volume mounts for live code changes)
+docker compose up
+
+# Your code changes in ocr_pipeline/ will be reflected immediately
+# No need to rebuild for code changes, only for dependency changes
+```
+
+**To rebuild after changing dependencies:**
+```bash
+docker compose up --build
+```
+
+### Production Deployment
+
+For production, build the optimized image and deploy to your preferred platform:
+
+```bash
+# Build production image
+docker build -t ocr-pipeline:prod .
+
+# Tag for your registry (e.g., Docker Hub, ECR, GCR)
+docker tag ocr-pipeline:prod your-registry/ocr-pipeline:v1.2.0
+
+# Push to registry
+docker push your-registry/ocr-pipeline:v1.2.0
+```
+
+**Deployment platforms:**
+- **AWS**: ECS, Fargate, or EC2 with Docker
+- **Google Cloud**: Cloud Run or GKE
+- **Azure**: Container Instances or AKS
+- **Fly.io**: `fly launch` (Docker detected automatically)
+- **Railway**: Connect GitHub repo and deploy
+
+### Docker Troubleshooting
+
+<details>
+<summary><b>Container fails to start or crashes immediately</b></summary>
+
+```bash
+# Check logs for errors
+docker logs ocr-api
+
+# Run in interactive mode to see full output
+docker run -it --rm -p 8000:8000 ocr-pipeline:latest
+```
+
+</details>
+
+<details>
+<summary><b>Port 8000 already in use</b></summary>
+
+```bash
+# Use a different port mapping
+docker run -d -p 8080:8000 ocr-pipeline:latest
+
+# Or with docker-compose, edit docker-compose.yml:
+# ports:
+#   - "8080:8000"
+```
+
+</details>
+
+<details>
+<summary><b>Out of memory errors</b></summary>
+
+The OCR pipeline can be memory-intensive. Increase Docker's memory limit:
+
+- Docker Desktop: Settings → Resources → Memory (set to at least 4GB)
+- Command line: `docker run -m 4g ocr-pipeline:latest`
+
+</details>
+
+---
+
 
 ### System Dependencies (Optional but Recommended)
 
