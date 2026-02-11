@@ -1,0 +1,14 @@
+--- utility.py
++++ utility.py
+@@ -181,6 +181,11 @@ def create_predictor(args, mode, logger):
+     if args.use_onnx:
+         import onnxruntime as ort
+         model_file_path = model_dir
++        # If model_dir is a directory, look for model.onnx inside it
++        if os.path.isdir(model_file_path):
++            onnx_path = os.path.join(model_file_path, 'model.onnx')
++            if os.path.exists(onnx_path):
++                model_file_path = onnx_path
+         if not os.path.exists(model_file_path):
+             raise ValueError("not find model file path {}".format(
+                 model_file_path))
