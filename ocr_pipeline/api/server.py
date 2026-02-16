@@ -108,7 +108,11 @@ async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
         
         # 3. Process with OCR pipeline
         logger.info(f"Running processing pipeline with type: {doc_type}")
-        result = pipeline.process_document(final_image_path, document_type=doc_type)
+        
+        # Offload the blocking pipeline call to a thread pool to avoid blocking the event loop
+        # This keeps the request synchronous to the user but helps with concurrency
+        from fastapi.concurrency import run_in_threadpool
+        result = await run_in_threadpool(pipeline.process_document, final_image_path, document_type=doc_type)
         
         # 4. Extract reason
         reason = "-"
@@ -116,7 +120,13 @@ async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
             if result.decision_result.reasons:
                 reason = result.decision_result.reasons[0]
         
-        # 5. Build response with raw OCR text
+        # 5. Log the full payload (as requested)
+        # Move raw OCR text and intermediate details to logs instead of API response
+        logger.info(f"Processing complete: {result.decision} (Score: {result.confidence.final_score:.3f})")
+        logger.info(f"FULL EXTRACTED TEXT:\n{result.full_text}")
+        logger.info(f"EXTRACTED FIELDS: {result.extracted_fields}")
+        
+        # 6. Build response with lean payload
         response_data = OCRResponse(
             status="success",
             document_type=result.document_type,
@@ -125,16 +135,13 @@ async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
             reason=reason,
             extracted_fields=result.extracted_fields,
             processing_time=round(result.processing_time, 2),
-            extraction_method=result.ocr_stats.get('method', 'fallback_ocr'),
+            extraction_method=result.ocr_stats.get('method', 'ocr'),
             template_confidence=result.ocr_stats.get('template_score'),
             fallback_confidence=result.ocr_stats.get('fallback_score'),
             structured_document=result.structured_document,
-            raw_ocr_text=result.full_text,  # Include raw OCR text
+            raw_ocr_text=None,  # Moved to logs
             error_details=None
         )
-        
-        logger.info(f"Processing complete: {result.decision} (Score: {response_data.confidence_score})")
-        logger.debug(f"Raw OCR text length: {len(result.full_text)} characters")
         
         return response_data
         

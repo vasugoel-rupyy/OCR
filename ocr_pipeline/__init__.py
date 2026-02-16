@@ -1,4 +1,5 @@
 """OCR Pipeline - Production-ready OCR system for Indian identity documents."""
+# First script to load
 
 import sys
 import os

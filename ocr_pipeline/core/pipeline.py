@@ -272,57 +272,69 @@ class OCRPipeline:
                 self.logger.info(f"Detected document type: {document_type} (score: {max_score})")
             
             primary_ocr_result = ocr_result
+            ocr_result_enh = None
             
-            # ID-Specific Enhanced OCR Pass (Dual Pass)
-            # For all Indian ID documents, run enhanced pass for better accuracy
+            # ID-Specific Adaptive OCR Pass (Dual Pass)
             if document_type in ['aadhaar', 'pan', 'vehicle_rc']:
-                self.logger.info(f"Running enhanced pass for {document_type} document")
+                stage_start_eval = time.time()
                 
-                # Pass 1 was already done above (OCRResult) on standard processed image
-                # Pass 2: Enhanced image
-                # Use robust skew correction for the base of enhancement
-                if hasattr(self.preprocessing_pipeline, 'corrector'):
-                    deskewed_image = self.preprocessing_pipeline.corrector.correct_skew(image)
+                # Preliminary field extraction to check if Pass 2 is needed
+                extractor = self._get_extractor(document_type)
+                extracted_fields = extractor.extract_fields(ocr_result)
+                
+                # Calculate preliminary OCR confidence
+                ocr_confidence_score = self.ocr_engine.calculate_ocr_confidence_score(ocr_result)
+                
+                # Check if mandatory fields are present
+                required_fields = self._get_required_fields(document_type)
+                mandatory_fields_present = all(field in extracted_fields for field in required_fields)
+                
+                # Adaptive logic: Skip enhanced pass if high confidence and mandatory fields found
+                # user suggested > 0.9 threshold
+                if ocr_confidence_score > 0.9 and mandatory_fields_present:
+                    self.logger.info(f"High confidence ({ocr_confidence_score:.2f}) and all mandatory fields found. Skipping enhanced pass.")
                 else:
-                    deskewed_image = image
+                    self.logger.info(f"Running enhanced pass for {document_type} (Score: {ocr_confidence_score:.2f}, Mandatory: {mandatory_fields_present})")
+                    
+                    # Pass 2: Enhanced image
+                    if hasattr(self.preprocessing_pipeline, 'corrector'):
+                        deskewed_image = self.preprocessing_pipeline.corrector.correct_skew(image)
+                    else:
+                        deskewed_image = image
+                    
+                    id_enhancer = IDDocumentEnhancer()
+                    enhanced_image = id_enhancer.enhance_for_ocr(deskewed_image)
+                    ocr_result_enh = self.ocr_engine.extract_text(enhanced_image)
+                    
+                    # Use the pass with more detected words as primary for confidence stats
+                    if ocr_result_enh.total_words > ocr_result.total_words:
+                        primary_ocr_result = ocr_result_enh
                 
-                id_enhancer = IDDocumentEnhancer()
-                enhanced_image = id_enhancer.enhance_for_ocr(deskewed_image)
-                ocr_result_enh = self.ocr_engine.extract_text(enhanced_image)
-                
-                # Use the pass with more detected words as primary for confidence stats
-                if ocr_result_enh.total_words > ocr_result.total_words:
-                    primary_ocr_result = ocr_result_enh
-                
-                # Note: We keep both results available for extractor logic
+                stage_eval_time = (time.time() - stage_start_eval) * 1000
+                self.logger.info(f"Adaptive OCR Strategy - completed in {stage_eval_time:.0f}ms")
             else:
-                 # Unknown type - single pass
-                 ocr_result_enh = None
-                 primary_ocr_result = ocr_result
+                # Non-ID types: Skip dual pass
+                primary_ocr_result = ocr_result
             
-            # Check if text was detected
-            
-            # Check if text was detected
+            # Final text detection check
             text_detected = primary_ocr_result.total_words > 0
             if not text_detected:
                 self.logger.warning("No text detected in document")
             
-            # Calculate OCR confidence score
+            # Final OCR confidence for reporting
             ocr_confidence_score = self.ocr_engine.calculate_ocr_confidence_score(primary_ocr_result)
             
-            # Stage 5: Document-Specific Field Extraction
+            # Stage 5: Document-Specific Field Extraction (Final)
             stage_start = time.time()
             self.logger.debug("Stage 5: Field Extraction")
             
-            # Get appropriate extractor
             extractor = self._get_extractor(document_type)
-            
-            # Extract from standard pass first
             extracted_fields = extractor.extract_fields(ocr_result)
             
-            # For all document types, try enhanced pass if available and fields are missing
+            # Merge fields from enhanced pass if available
             if ocr_result_enh:
                 fields_enh = extractor.extract_fields(ocr_result_enh)
+                # ... same merge logic ...
                 
                 # Merge fields from enhanced pass if missing in standard
                 # Priority fields that benefit from enhancement
