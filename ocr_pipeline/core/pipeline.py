@@ -336,12 +336,11 @@ class OCRPipeline:
                 fields_enh = extractor.extract_fields(ocr_result_enh)
                 # ... same merge logic ...
                 
-                # Merge fields from enhanced pass if missing in standard
                 # Priority fields that benefit from enhancement
                 if document_type == 'aadhaar':
                     priority_fields = ['aadhaar_number', 'name', 'date_of_birth', 'gender', 'address']
                     # Special handling for aadhaar_number alias
-                    if 'aadhaar_number' in fields_enh and 'aadhaar_number' not in extracted_fields:
+                    if 'aadhaar_number' in fields_enh:
                         extracted_fields['aadhaar_number'] = fields_enh['aadhaar_number']
                         extracted_fields['id_number'] = fields_enh['aadhaar_number']
                 elif document_type == 'pan':
@@ -351,10 +350,15 @@ class OCRPipeline:
                 else:
                     priority_fields = []
                 
-                # Merge priority fields
+                # Merge or OVERRIDE priority fields (Enhanced pass is higher quality)
                 for key in priority_fields:
-                    if key not in extracted_fields and key in fields_enh:
+                    if key in fields_enh:
                         extracted_fields[key] = fields_enh[key]
+                
+                # Merge any other missing fields
+                for key, value in fields_enh.items():
+                    if key not in extracted_fields:
+                        extracted_fields[key] = value
             
             # Update main ocr_result to be the primary one for reporting
             ocr_result = primary_ocr_result

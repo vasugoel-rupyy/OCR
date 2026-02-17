@@ -207,7 +207,7 @@ class AadhaarExtractor:
         return None
 
     def _extract_name(self, text: str, ocr_result: OCRResult) -> Optional[str]:
-        """Extract person's name.
+        """Extract person's name with multiple strategies.
         
         Args:
             text: Full OCR text
@@ -216,36 +216,53 @@ class AadhaarExtractor:
         Returns:
             Name or None
         """
-        # Strategy 1: Look for name after keywords
-        # Allow noise chars (like @, :) between words
-        name_patterns = [
-            r'(?:name|नाम)\s*:?\s*([A-Za-z\s]{3,50})',
-            r'([A-Z][a-z]+(?:[\s@:.,]*[A-Z][a-z]+)+)',  # Capitalized words with noise or merged
-        ]
-        
-        for pattern in name_patterns:
-            match = re.search(pattern, text)
-            if match:
-                raw_name = match.group(1).strip()
-                # Clean up noise chars to get pure name
-                name = re.sub(r'[@:.,]', ' ', raw_name)
-                # Split CamelCase/Merged words if attached
-                name = re.sub(r'([a-z])([A-Z])', r'\1 \2', name)
-                name = re.sub(r'\s+', ' ', name).strip()
-                
-                # Filter out common false positives
-                if self._is_valid_name(name):
-                    return name
-        
-        # Strategy 2: Look in top lines (name usually near top)
-        if ocr_result.lines and len(ocr_result.lines) > 2:
-            for line in ocr_result.lines[1:4]:  # Skip first line (usually "Aadhaar")
+        # Strategy 1: Keyword-based match (High precision)
+        # Search for name specifically after "Name" label
+        keyword_pattern = r'(?:name|नाम|नामा|नाभ)\s*[:.-]?\s*([A-Za-z \t]{3,50})'
+        for match in re.finditer(keyword_pattern, text, re.IGNORECASE | re.UNICODE):
+            name = re.sub(r'[@:.,]', ' ', match.group(1))
+            name = re.sub(r'\s+', ' ', name).strip()
+            if self._is_valid_name(name):
+                return name
+
+        # Strategy 2: Positional merging of top lines (Handles skew/splits)
+        # Name is usually line 2 or 3 in standard Aadhaar formats
+        if ocr_result.lines:
+            # Check lines 1 to 4 (skipping Govt of India header at line 0)
+            for i in range(1, min(len(ocr_result.lines), 5)):
+                line = ocr_result.lines[i]
                 text_line = line.text.strip()
-                # Look for capitalized words
-                if re.match(r'^[A-Z][a-z]+.*[A-Z][a-z]+', text_line):
-                    name_cand = re.sub(r'([a-z])([A-Z])', r'\1 \2', text_line)
-                    if self._is_valid_name(name_cand):
-                        return name_cand
+                name_cand = re.sub(r'([a-z])([A-Z])', r'\1 \2', text_line)
+                name_cand = re.sub(r'\s+', ' ', name_cand).strip()
+                
+                if self._is_valid_name(name_cand):
+                    # Check if next line is a continuation of the name (skew case)
+                    if i + 1 < len(ocr_result.lines):
+                        next_line_text = ocr_result.lines[i+1].text.strip()
+                        next_name_part = re.sub(r'([a-z])([A-Z])', r'\1 \2', next_line_text)
+                        next_name_part = re.sub(r'\s+', ' ', next_name_part).strip()
+                        
+                        # Merge if next line is also a valid name part and doesn't look like a new field
+                        if (self._is_valid_name(next_name_part) and 
+                            not any(kw in next_line_text.lower() for kw in ['dob', 'address', 'pata', 'birth', 'gender'])):
+                            return f"{name_cand} {next_name_part}"
+                    
+                    return name_cand
+
+        # Strategy 3: Global pattern match for capitalized words (Last resort)
+        # Useful if keywords are missing and position is non-standard
+        global_pattern = r'([A-Z][A-Za-z]{2,}(?:[ \t@:.,]+[A-Z][A-Za-z]{1,})*)'
+        candidates = []
+        for match in re.finditer(global_pattern, text):
+            name = re.sub(r'[@:.,]', ' ', match.group(0))
+            name = re.sub(r'\s+', ' ', name).strip()
+            if self._is_valid_name(name):
+                candidates.append((name, match.start()))
+        
+        if candidates:
+            # Pick the earliest occurrence in the document
+            candidates.sort(key=lambda x: x[1])
+            return candidates[0][0]
         
         return None
     
@@ -258,26 +275,43 @@ class AadhaarExtractor:
         Returns:
             True if looks like a name
         """
-        # Filter out common false positives
+        # Filter out common false positives and metadata
         invalid_keywords = [
             'government', 'india', 'aadhaar', 'male', 'female',
-            'address', 'date', 'birth', 'dob'
+            'address', 'date', 'birth', 'dob', 'yob', 'pata',
+            'unique', 'identification', 'authority', 'enrollment',
+            's/o', 'd/o', 'w/o', 'c/o', 'care of', 'son of', 'daughter of', 'wife of',
+            'vid', 'help', 'email', 'www.', 'website', 'download',
+            'uidai', 'govt', 'भारत', 'सरकार', 'आबकारी', 'विभाग', 'nrc', 'pib',
+            'name', 'नाम', 'नामा', 'नाभ'
         ]
         
         name_lower = name.lower()
+        # Clean name from common parentage prefixes if they got caught
+        for prefix in ['s/o', 'd/o', 'w/o', 'c/o', 'son of', 'daughter of']:
+            if name_lower.startswith(prefix):
+                return False
+
         for keyword in invalid_keywords:
             if keyword in name_lower:
                 return False
         
-        # Must have at least 2 words
-        words = name.split()
-        if len(words) < 2:
+        # Minimum total length for a name
+        if len(name) < 3:
             return False
-        
+
+        words = name.split()
+        if len(words) == 0:
+            return False
+            
         # Each word should be mostly alphabetic
         for word in words:
-            if not word.isalpha() or len(word) < 2:
+            # Allow names with dots like "A.K. Sharma" or "Anjali."
+            word_clean = re.sub(r'[.]', '', word)
+            if not word_clean.isalpha() and len(word_clean) > 0:
                 return False
+            if len(word_clean) < 2 and len(words) == 1:
+                return False # Single letter names are rare/invalid
         
         return True
     
