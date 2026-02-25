@@ -29,7 +29,7 @@ from ..builders.document_builder import DocumentBuilder
 from ..scoring import ConfidenceScorer, DecisionEngine, DocumentConfidence, DecisionResult, Decision
 from ..scoring.confidence import FieldConfidence
 from .classification import DocumentClassifier
-from ..segmentation import SegmentationPipeline, Region
+from ..segmentation import SegmentationPipeline, Region, BoundingBox
 from ..validation.spatial_validator import SpatialValidator
 from ..validation.business_rules import BusinessRuleValidator
 
@@ -144,6 +144,13 @@ class OCRPipeline:
         import time
         start_time = time.time()
         
+        # Normalize document type
+        document_type = document_type.lower().strip()
+        if document_type in ['aadhar', 'adhara', 'adhar']:
+            document_type = 'aadhaar'
+        elif document_type in ['rc', 'vehicle', 'car_rc']:
+            document_type = 'vehicle_rc'
+        
         self.logger.info(f"Processing document: {image_path} (type: {document_type})")
         
         # Initialize confidence tracking
@@ -164,58 +171,39 @@ class OCRPipeline:
             if not quality_metrics.passed:
                 self.logger.warning(f"Image failed quality gate: {quality_metrics.failure_reasons}")
             
-            # Stage 1.5: Document Detection & Segmentation (NEW)
+            # Stage 1.5: Document Detection & Segmentation (SKIPPED in this branch)
             stage_start = time.time()
-            self.logger.debug("Stage 1.5: Document Detection & Segmentation")
+            self.logger.info("Stage 1.5: Document Detection & Segmentation - SKIPPED")
             
-            # Run lightweight OCR for text clustering (if enabled)
-            ocr_boxes_for_clustering = None
-            if self.segmentation_pipeline.use_text_clustering:
-                try:
-                    # Quick OCR pass just to get bounding boxes
-                    quick_ocr = self.ocr_engine.extract_text(image)
-                    if hasattr(quick_ocr, 'boxes') and quick_ocr.boxes:
-                        ocr_boxes_for_clustering = quick_ocr.boxes
-                except Exception as e:
-                    self.logger.warning(f"Failed to get OCR boxes for clustering: {e}")
+            # Manually create a full-image region
+            h, w = image.shape[:2]
+            selected_region = Region(
+                bbox=BoundingBox(0, 0, w, h),
+                image=image.copy(),
+                confidence=1.0,
+                detection_method='full_image',
+                area_ratio=1.0
+            )
+            detected_regions = [selected_region]
+            num_regions = 1
             
-            # Detect document regions
-            detected_regions = self.segmentation_pipeline.detect_regions(image, ocr_boxes_for_clustering)
-            num_regions = len(detected_regions)
             stage_time = (time.time() - stage_start) * 1000
+            self.logger.debug(f"Stage 1.5: Document Detection & Segmentation - bypassed in {stage_time:.0f}ms")
             
-            self.logger.info(f"Stage 1.5: Document Detection & Segmentation - completed in {stage_time:.0f}ms")
-            self.logger.info(f"Detected {num_regions} document region(s)")
-            
-            # Determine if multiple documents detected
-            multi_document_flag = num_regions > 1
+            # Determine if multiple documents detected (Always False in this branch)
+            multi_document_flag = False
             conflicting_schemas = False
             
             # Stage 2: Preprocessing & Correction
             stage_start = time.time()
             self.logger.debug("Stage 2: Image Preprocessing")
             
-            # Select region to process
-            if num_regions == 1:
-                # Single region (could be full image or single detected document)
-                selected_region = detected_regions[0]
-                region_image = selected_region.image
-                self.logger.debug(f"Processing single region (method: {selected_region.detection_method})")
-            else:
-                # Multiple regions detected - select best one
-                # Sort by confidence and select highest
-                selected_region = detected_regions[0]  # Already sorted by confidence
-                region_image = selected_region.image
-                self.logger.info(f"Multiple regions detected, selected region with confidence {selected_region.confidence:.3f}")
-                
-                # Check if there are multiple high-confidence regions (ambiguous case)
-                high_conf_regions = [r for r in detected_regions if r.confidence > 0.7]
-                if len(high_conf_regions) > 1:
-                    self.logger.warning(f"Multiple high-confidence regions detected ({len(high_conf_regions)})")
-                    multi_document_flag = True
+            # Use the manually created full image region
+            region_image = selected_region.image
+            self.logger.debug("Processing full image (segmentation skipped)")
             
             # Store region info for result
-            region_info = selected_region.to_dict() if selected_region else None
+            region_info = selected_region.to_dict()
             
             # Preprocess the selected region
             preprocessing_result = self.preprocessing_pipeline.process(region_image, save_intermediates)

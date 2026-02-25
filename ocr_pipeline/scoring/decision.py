@@ -94,6 +94,16 @@ class DecisionEngine:
         
         if self.reject_quality_fail and not quality_passed:
             reasons.append("Image failed quality gate")
+            # If confidence is exceptionally high, allow it to be REVIEWed instead of hard REJECTed
+            if document_confidence.final_score >= self.accept_threshold:
+                reasons.append(f"Hard REJECT downgraded to REVIEW due to high confidence score ({document_confidence.final_score:.2f})")
+                return DecisionResult(
+                    decision=Decision.REVIEW,
+                    confidence_score=document_confidence.final_score,
+                    reasons=reasons,
+                    hard_rejection=False
+                )
+            
             hard_rejection = True
             return DecisionResult(
                 decision=Decision.REJECT,

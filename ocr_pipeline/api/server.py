@@ -49,6 +49,13 @@ async def startup_event():
 
 async def _process_and_respond(image_url: str, doc_type: str) -> OCRResponse:
     """Helper to process an image/PDF and return response data."""
+    # Normalize document type
+    doc_type = doc_type.lower().strip()
+    if doc_type in ['aadhar', 'adhara', 'adhar']:
+        doc_type = 'aadhaar'
+    elif doc_type in ['rc', 'vehicle', 'car_rc']:
+        doc_type = 'vehicle_rc'
+        
     if not pipeline:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
     
