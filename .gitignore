@@ -20,6 +20,15 @@ htmlcov/
 
 # Output files
 *.json
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.txt
+*JPG
+*JPEG
+*PNG
+*TXT
 test_images/
 test_output/
 batch_results/

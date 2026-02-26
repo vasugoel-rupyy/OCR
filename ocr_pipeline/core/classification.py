@@ -29,6 +29,13 @@ class DocumentClassifier:
                 'engine no', 'chassis no', 'registering authority', 'owner',
                 'रजिस्ट्रेशन', 'वाहन', 'इंजन', 'चेसिस', 'maker', 'model',
                 'vehicle class', 'reg no', 'rc', 'rto'
+            ],
+            'disbursement_order': [
+                'disbursement order', 'loan disbursement', 'sanction letter',
+                'credit facility release', 'loan release advice', 'disbursement memo',
+                'loan booking confirmation', 'loan account created', 'first disbursement',
+                'amount credited to account', 'ऋण वितरण', 'वितरण आदेश', 'स्वीकृत ऋण',
+                'ऋण जारी', 'ऋण खाता', 'बैंक द्वारा वितरित'
             ]
         }
         
@@ -57,6 +64,12 @@ class DocumentClassifier:
                 r'(?:fuel|seating|unladen|wheel\s*base)',
                 r'(?:mfg\s*date|form\s+23)',
                 r'(?:model|maker|manufacturer)',
+            ],
+            'disbursement_order': [
+                r'(?i)(?:disbursement\s+order|loan\s+disbursement|sanction\s+letter)',
+                r'(?i)(?:credit\s+facility\s+release|loan\s+release\s+advice|disbursement\s+memo)',
+                r'(?i)(?:loan\s+booking\s+confirmation|amount\s+credited\s+to\s+account)',
+                r'(?i)(?:first\s+disbursement)',
             ],
         }
     
@@ -102,15 +115,33 @@ class DocumentClassifier:
         classified_type = max(scores, key=scores.get)
         
         # Tie-breaker: if multiple types have same score, use priority order
-        # Priority: vehicle_rc > pan > aadhaar (more specific to less specific)
+        # Priority: disbursement_order > vehicle_rc > pan > aadhaar (more specific to less specific)
         if list(scores.values()).count(max_score) > 1:
             logger.info(f"Tie detected, using priority order")
-            priority_order = ['vehicle_rc', 'pan', 'aadhaar']
+            priority_order = ['disbursement_order', 'vehicle_rc', 'pan', 'aadhaar']
             for dtype in priority_order:
                 if scores[dtype] == max_score:
                     classified_type = dtype
                     break
         
+        # Calculate specialized confidence for DO (as per requirements)
+        if classified_type == 'disbursement_order':
+            # Count the number of matched positive indicators
+            matched_indicators = 0
+            for keyword in self.type_keywords['disbursement_order']:
+                if keyword.lower() in text_lower:
+                    matched_indicators += 1
+            for p in self.type_patterns['disbursement_order']:
+                if re.search(p, text, re.IGNORECASE):
+                    matched_indicators += 1
+                    
+            # Confidence logic: >= 2 indicators gives high confidence
+            do_confidence = min(1.0, matched_indicators / 3.0) # 3 or more is 1.0, 2 is 0.66, 1 is 0.33
+            
+            # Since the requirement says route to SEFM if >=0.75, run + flag if 0.45-0.75, manual review < 0.45.
+            # We will return the confidence as part of scores dictionary for downstream evaluation.
+            scores['disbursement_order_confidence'] = do_confidence
+
         logger.info(f"Classified as: {classified_type} (score: {scores[classified_type]})")
         return classified_type, scores
 

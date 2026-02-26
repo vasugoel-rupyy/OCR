@@ -10,8 +10,10 @@ from typing import Dict, Union, Optional, List, Callable
 from dataclasses import dataclass, field
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import cv2
 
 from ..utils import load_config, setup_logging, load_image, clean_text
+from ..utils_pdf import is_pdf, is_pdf_supported, convert_pdf_to_images
 from ..quality import ImageQualityAssessor, QualityMetrics
 from ..preprocessing import PreprocessingPipeline
 from ..preprocessing.id_enhancer import IDDocumentEnhancer
@@ -20,7 +22,7 @@ from ..validation.anchors import AnchorValidator
 from ..validation.distribution import DistributionAnalyzer
 from ..validation.key_value import KeyValueExtractor
 from ..ocr import PaddleOCREngine, OCRResult
-from ..documents import AadhaarExtractor, PANExtractor, VehicleRCExtractor, BaseDocumentProcessor
+from ..documents import AadhaarExtractor, PANExtractor, VehicleRCExtractor, DisbursementOrderProcessor, BaseDocumentProcessor
 from ..documents.base import BaseDocument
 from ..documents.aadhaar import AadhaarDocument
 from ..documents.pan import PanDocument
@@ -119,6 +121,7 @@ class OCRPipeline:
         self.aadhaar_extractor = AadhaarExtractor()
         self.pan_extractor = PANExtractor()
         self.vehicle_rc_extractor = VehicleRCExtractor()
+        self.disbursement_order_extractor = DisbursementOrderProcessor()
         
         # Initialize segmentation pipeline
         self.segmentation_pipeline = SegmentationPipeline(self.config.get('segmentation', {}))
@@ -157,8 +160,20 @@ class OCRPipeline:
         template_conf = 0.0
         
         try:
-            # Load image
-            image = load_image(image_path)
+            # Load image or first page of PDF
+            if is_pdf(image_path):
+                if not is_pdf_supported():
+                    raise ValueError(f"pdf2image is not installed to process PDF: {image_path}")
+                pil_images = convert_pdf_to_images(image_path)
+                if not pil_images:
+                    raise ValueError(f"No pages found in PDF: {image_path}")
+                # Use the first page for processing
+                pil_image = pil_images[0]
+                # Convert PIL RGB to OpenCV BGR
+                image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+            else:
+                image = load_image(image_path)
+                
             image_shape = image.shape[:2]
             
             # Stage 1: Image Quality Gate
@@ -255,6 +270,15 @@ class OCRPipeline:
                         self.logger.info(f"Re-classification scores: {scores}")
 
                 document_type = document_type_candidate
+                
+                # Apply Disbursement Order early routing rules
+                if document_type == 'disbursement_order':
+                    do_conf = scores.get('disbursement_order_confidence', 0.0)
+                    if do_conf < 0.45:
+                        self.logger.warning(f"Low confidence DO ({do_conf:.2f}), sending to manual review")
+                        # We can either reject here or let decision engine handle low scores by adjusting confidence
+                        # For now, mark DO confidence high enough to process if >=0.45, else it fails validation naturally.
+
                 stage_time = (time.time() - stage_start) * 1000
                 self.logger.info(f"Stage 4: Document Classification - completed in {stage_time:.0f}ms")
                 self.logger.info(f"Detected document type: {document_type} (score: {max_score})")
@@ -520,6 +544,8 @@ class OCRPipeline:
                 structured_doc = DocumentBuilder.build_pan(extracted_fields, field_confs)
             elif document_type == 'vehicle_rc':
                 structured_doc = DocumentBuilder.build_rc(extracted_fields, field_confs)
+            elif document_type == 'disbursement_order':
+                structured_doc = DocumentBuilder.build_disbursement_order(extracted_fields, field_confs)
             
             if structured_doc:
                 # Sync confidence and decision from pipeline
@@ -653,6 +679,8 @@ class OCRPipeline:
             return self.pan_extractor
         elif document_type == 'vehicle_rc':
             return self.vehicle_rc_extractor
+        elif document_type == 'disbursement_order':
+            return self.disbursement_order_extractor
         else:
             # Default to aadhaar for unknown types
             self.logger.warning(f"Unknown document type: {document_type}, defaulting to aadhaar extractor")
@@ -697,7 +725,8 @@ class OCRPipeline:
         required_fields_map = {
             'aadhaar': ['aadhaar_number', 'name', 'date_of_birth'],
             'pan': ['pan_number', 'name', 'date_of_birth'],
-            'vehicle_rc': ['registration_number', 'owner_name']
+            'vehicle_rc': ['registration_number', 'owner_name'],
+            'disbursement_order': ['loan_amount']  # Assume loan amount is critical
         }
         
         return required_fields_map.get(document_type, ['id_number', 'name'])

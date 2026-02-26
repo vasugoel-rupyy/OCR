@@ -5,6 +5,7 @@ from ..documents.base import BaseDocument, FieldValue, Decision
 from ..documents.aadhaar import AadhaarDocument
 from ..documents.pan import PanDocument
 from ..documents.vehicle_rc import RcDocument
+from ..documents.disbursement_order import DisbursementOrderDocument
 
 
 class DocumentBuilder:
@@ -88,6 +89,31 @@ class DocumentBuilder:
         doc.decision = DocumentBuilder._make_decision(doc)
         
         return doc
+
+    @staticmethod
+    def build_disbursement_order(raw_data: Dict[str, Any], confidence_scores: Dict[str, float] = None) -> DisbursementOrderDocument:
+        """Build DisbursementOrderDocument from raw data."""
+        if confidence_scores is None:
+            confidence_scores = {}
+            
+        fields = {}
+        # Critical
+        fields['loan_amount'] = DocumentBuilder._create_field(raw_data.get('loan_amount'), confidence_scores.get('loan_amount', 0.8))
+        
+        # Optional
+        fields['disbursed_amount'] = DocumentBuilder._create_field(raw_data.get('disbursed_amount'), confidence_scores.get('disbursed_amount', 0.8))
+        fields['rate_of_interest'] = DocumentBuilder._create_field(raw_data.get('rate_of_interest'), confidence_scores.get('rate_of_interest', 0.8))
+        fields['tenure_months'] = DocumentBuilder._create_field(raw_data.get('tenure_months'), confidence_scores.get('tenure_months', 0.8))
+        fields['customer_name'] = DocumentBuilder._create_field(raw_data.get('customer_name'), confidence_scores.get('customer_name', 0.8))
+        fields['bank_name'] = DocumentBuilder._create_field(raw_data.get('bank_name'), confidence_scores.get('bank_name', 0.8))
+        fields['ifsc'] = DocumentBuilder._create_field(raw_data.get('ifsc'), confidence_scores.get('ifsc', 0.8))
+        fields['bank_branch_region'] = DocumentBuilder._create_field(raw_data.get('bank_branch_region'), confidence_scores.get('bank_branch_region', 0.8))
+        
+        doc = DisbursementOrderDocument(**fields)
+        doc.overall_confidence = DocumentBuilder._calculate_overall_confidence(doc)
+        doc.decision = DocumentBuilder._make_decision(doc)
+        
+        return doc
         
     @staticmethod
     def _create_field(value: Optional[str], confidence: float) -> FieldValue:
@@ -126,6 +152,10 @@ class DocumentBuilder:
             
         elif isinstance(doc, RcDocument):
              if not doc.registration_number.value: critical_missing = True
+
+        elif isinstance(doc, DisbursementOrderDocument):
+             # Just use overall confidence or basic checks
+             if not doc.loan_amount.value: critical_missing = True
         
         if critical_missing:
             return Decision.REJECT
