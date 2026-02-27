@@ -16,7 +16,7 @@ from .models import OCRRequest, OCRResponse
 
 # Try to import PDF utilities
 try:
-    from ..utils_pdf import is_pdf, pdf_to_image_file, is_pdf_supported
+    from ..utils import is_pdf, pdf_to_image_file, is_pdf_supported
     PDF_AVAILABLE = is_pdf_supported()
 except ImportError:
     PDF_AVAILABLE = False

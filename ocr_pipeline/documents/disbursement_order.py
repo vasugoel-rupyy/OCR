@@ -33,59 +33,114 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
     def __init__(self, config: Dict = None):
         super().__init__(config or {})
         
-        # Vocabularies
+        # --------------- LABEL KEYWORDS (for proximity search) ---------------
+        # These are used to LOCATE a field on a line; they are NOT returned as values.
+        # Ordered: most-specific first → least-specific last.
         self.keywords = {
             'loan_amount': [
                 'sanctioned amount', 'loan amount', 'approved amount',
                 'facility amount', 'credit limit', 'loan value', 'principal amount',
                 'ऋण राशि', 'स्वीकृत राशि', 'स्वीकृत ऋण', 'मूलधन',
                 'credit facility', 'loan sanction', 'term loan amount',
-                'amount loan', 'loan', 'amount'
+                'amount loan',
             ],
             'disbursed_amount': [
-                'disbursed amount', 'net disbursement', 'amount released',
-                'amount credited', 'payout amount', 'released amount',
+                'disbursed amount', 'net disbursement amount', 'net disbursement',
+                'amount released', 'amount credited', 'payout amount',
+                'released amount', 'disbursement amount',
                 'वितरित राशि', 'जारी राशि', 'खाते में जमा राशि', 'भुगतान राशि',
-                'net proceeds', 'disbursement value', 'finance amount', 'total payable', 'amount payable',
-                'loan disbursement', 'case disbursed', 'net disbursement amount',
-                'disbursement amount loan', 'amount net disbursement', 'disbursement'
+                'net proceeds', 'disbursement value', 'finance amount',
+                'total payable', 'amount payable',
+                'loan disbursement', 'case disbursed',
             ],
             'rate_of_interest': [
-                'interest rate', 'roi', 'applicable interest', 'lending rate',
+                'interest rate', 'rate of interest', 'roi',
+                'applicable interest', 'lending rate',
                 'floating rate', 'fixed rate',
-                'ब्याज दर', 'वार्षिक ब्याज', 'लागू ब्याज'
+                'ब्याज दर', 'वार्षिक ब्याज', 'लागू ब्याज',
             ],
             'tenure': [
-                'tenure', 'loan period', 'repayment period', 'term', 'duration',
+                'tenure months', 'tenure in months', 'period in months',
+                'tenure', 'loan period', 'repayment period', 'duration',
                 'ऋण अवधि', 'पुनर्भुगतान अवधि', 'अवधि',
-                'tenure months', 'emi'
+                'emi tenure', 'loan tenure',
             ],
             'customer_name': [
-                'borrower name', 'applicant name', 'customer name', 'account holder',
+                'name of customer', 'borrower name', 'applicant name',
+                'customer name', 'account holder', 'sold to',
                 'ग्राहक नाम', 'उधारकर्ता नाम', 'आवेदक नाम',
-                'intended recipient', 'customer', 'name', 'details', 'sold to'
+                'intended recipient',
             ],
             'bank_name': [
-                'hdfc bank', 'icici bank', 'axis bank', 'state bank of india', 'bank of baroda',
+                'hypothecation bank name', 'hypothecation bank',
+                'bank name', 'financier name', 'lender name',
                 'बैंक का नाम', 'जारीकर्ता बैंक',
-                'bank name', 'bank', 'hypothecation', 'hypothecation bank', 'hypothecation bank name'
+                'hypothecation',
             ],
             'ifsc': [
-                'ifsc', 'ifsc code', 'bank ifsc', 'branch ifsc',
-                'आईएफएससी', 'आईएफएससी कोड'
+                'ifsc code', 'ifsc', 'bank ifsc', 'branch ifsc',
+                'आईएफएससी', 'आईएफएससी कोड',
             ],
             'bank_branch_region': [
-                'regional office', 'region', 'ro', 'zonal office', 'branch region',
+                'regional office', 'branch name', 'branch region',
+                'zonal office', 'region', 'loan branch',
                 'क्षेत्र', 'क्षेत्रीय कार्यालय',
-                'branch name', 'branch'
-            ]
+            ],
+        }
+        
+        # --------------- KNOWN BANK NAMES (for direct text matching) ---------------
+        # These are returned as the extracted bank_name value.
+        self.known_banks = [
+            'hdfc bank', 'icici bank', 'axis bank', 'state bank of india',
+            'bank of baroda', 'kotak mahindra bank', 'kotak mahindra',
+            'yes bank', 'idbi bank', 'punjab national bank', 'pnb',
+            'canara bank', 'union bank of india', 'union bank',
+            'indian overseas bank', 'federal bank', 'bandhan bank',
+            'indusind bank', 'idfc first bank', 'rbl bank',
+            'south indian bank', 'karur vysya bank',
+            'bank of india', 'central bank of india', 'uco bank',
+            'indian bank', 'bank of maharashtra',
+            'au small finance bank', 'equitas small finance bank',
+            'jana small finance bank', 'ujjivan small finance bank',
+            'hero fincorp', 'bajaj finance', 'tata capital',
+            'mahindra finance', 'shriram finance', 'muthoot finance',
+            'muthoot capital', 'cholamandalam', 'manappuram finance',
+            'l&t finance', 'sundaram finance',
+            'punjab & sind bank', 'punjab and sind bank',
+            'esaf bank', 'piramal finance', 'fullerton india',
+            'hinduja leyland', 'hdb financial', 'iifl finance',
+        ]
+        
+        # --------------- CUSTOMER NAME BLOCKLIST ---------------
+        # Tokens/patterns that should never appear in a valid person name.
+        self._name_blocklist_tokens = {
+            'a/c', 'no.', 'no', 'rs', 'rs.', 'inr', '₹', 'amount', 'loan',
+            'emi', 'rate', 'bank', 'branch', 'ifsc', 'neft', 'rtgs',
+            'hypothecation', 'disbursement', 'sanction', 'tenure',
+            'maruti', 'hyundai', 'honda', 'toyota', 'tata', 'kia',
+            'mahindra', 'suzuki', 'brezza', 'creta', 'verna', 'swift',
+            'alto', 'sedan', 'suv', 'hatchback', 'cng', 'petrol', 'diesel',
+            'lxi', 'vxi', 'zxi', 'vdi', 'zdi', 'limited', 'pvt', 'ltd',
+            'invoice', 'vehicle', 'receipt', 'document', 'order',
+            'favour', 'following', 'disbursed', 'behalf', 'subject',
+            'location', 'address', 'please', 'note', 'authorized',
+            'attached', 'reference', 'kindly', 'delete', 'mail',
+            'proprietary', 'revoked', 'applicant', 'type', 'intended',
+            'recipient', 'confidential', 'contain', 'may',
+        }
+        
+        # Blocklist for bank_name fallback to reject non-bank text
+        self._bank_blocklist_tokens = {
+            'code', 'branch', 'security', 'payment', 'charges', 'deposit',
+            'deposited', 'hypothecatee', 'cap', 'blue', 'book', 'delayed',
+            'insurance', 'cover', 'note', 'clause', 'certificate',
         }
         
         self.regexes = {
             'amount': r'(?:₹|Rs\.?|INR)?\s?([0-9,]{3,12}(?:\.\d{1,2})?)',
             'interest': r'(\d{1,2}(?:\.\d{1,2})?)(?:\s?(?:%|percent|p\.a))?',
             'tenure': r'(\d{1,3})(?:\s?(months?|yrs?|years?))?',
-            'ifsc': r'([A-Z]{4}0[A-Z0-9]{6})'
+            'ifsc': r'([A-Z]{4}0[A-Z0-9]{6})',
         }
 
     def get_document_type(self) -> str:
@@ -112,6 +167,13 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
                 return True
         return False
 
+    def _keyword_end_position(self, line: str, keyword: str) -> int:
+        """Return the character index where the keyword ends in the line, or -1."""
+        idx = line.lower().find(keyword.lower())
+        if idx >= 0:
+            return idx + len(keyword)
+        return -1
+
     def _extract_field_proximity(self, text: str, field_name: str, regex_pattern: str, is_amount: bool = False) -> Tuple[Optional[str], float]:
         """Multi-stage retrieval using line-by-line proximity to keywords."""
         lines = text.split('\n')
@@ -131,23 +193,46 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
                     if i + 2 < len(lines):
                         search_lines.append(lines[i + 2])
                         
+                    # Find where keyword ends on the first line for ordering preference
+                    kw_end = self._keyword_end_position(line, keyword)
+                        
                     for j, search_line in enumerate(search_lines):
-                        # Avoid searching backwards into the keyword itself if on the same line
-                        # But for simplicity, we regex search the line
                         matches = list(re.finditer(regex_pattern, search_line, re.IGNORECASE))
                         if matches:
-                            # If we are on the exact same line as the keyword, we prefer numbers that appear AFTER the keyword
                             for match in matches:
                                 val_str = match.group(1) if match.lastindex else match.group(0)
                                 if field_name == 'tenure' and match.lastindex and match.lastindex >= 2:
                                     val_str = f"{match.group(1)} {match.group(2)}"
                                 
+                                # Base confidence by line distance
                                 conf = 0.95 if j == 0 else (0.85 if j == 1 else 0.75)
+                                
+                                # Prefer values AFTER the keyword on the same line
+                                if j == 0 and kw_end >= 0 and match.start() < kw_end:
+                                    conf *= 0.6  # Penalize values before keyword
+                                
+                                # TENURE RANGE GUARD: reject implausible at extraction time
+                                if field_name == 'tenure':
+                                    try:
+                                        raw_num = int(match.group(1))
+                                        has_unit = match.lastindex and match.lastindex >= 2 and match.group(2)
+                                        unit = match.group(2).lower() if has_unit else ''
+                                        if unit.startswith('y'):
+                                            effective_months = raw_num * 12
+                                        else:
+                                            effective_months = raw_num
+                                        if effective_months < 3 or effective_months > 120:
+                                            conf = 0.0  # Skip implausible tenure
+                                        # Boost confidence if explicit unit present
+                                        if has_unit:
+                                            conf *= 1.1
+                                    except (ValueError, IndexError):
+                                        pass
                                 
                                 # Ambiguity handling for amounts
                                 if is_amount:
-                                    sanc_ctx = any(k.lower() in search_line.lower() or self._fuzzy_match(search_line, k) for k in self.keywords['loan_amount'])
-                                    disb_ctx = any(k.lower() in search_line.lower() or self._fuzzy_match(search_line, k) for k in self.keywords['disbursed_amount'])
+                                    sanc_ctx = any(k.lower() in search_line.lower() for k in self.keywords['loan_amount'][:6])
+                                    disb_ctx = any(k.lower() in search_line.lower() for k in self.keywords['disbursed_amount'][:6])
                                     
                                     if sanc_ctx and disb_ctx:
                                         conf = 0.0
@@ -162,41 +247,137 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
 
         return best_val, max_conf
 
+    def _is_valid_person_name(self, name: str) -> bool:
+        """Validate that extracted text looks like a person's name."""
+        if not name or len(name.strip()) < 3:
+            return False
+        name = name.strip()
+        # Reject names starting with punctuation (leading dots, colons, dashes)
+        if name[0] in '.:-;,/|':
+            return False
+        # Reject overly long strings (likely paragraphs)
+        if len(name) > 50:
+            return False
+        # Reject names containing digits
+        if re.search(r'\d', name):
+            return False
+        # Reject names with fewer than 2 words (too ambiguous for SEFM)
+        # Allow Mr./Mrs./Ms. prefixed single names
+        words = [w for w in name.split() if len(w) > 1]
+        if len(words) < 2:
+            return False
+        # Reject names containing too many special characters
+        special_count = sum(1 for c in name if c in '₹@#$%^&*()[]{}|<>/\\')
+        if special_count > 1:
+            return False
+        # Check blocklist tokens
+        name_lower = name.lower()
+        for token in self._name_blocklist_tokens:
+            if token in name_lower.split() or token in name_lower:
+                # Allow partial match only for very short tokens if they are substrings within a word
+                # e.g., 'no' in 'Noor' should be OK, but 'no' as a standalone word is not
+                if len(token) <= 2:
+                    if token in name_lower.split():
+                        return False
+                else:
+                    if token in name_lower:
+                        return False
+        return True
+
+    def _extract_name_title_scan(self, text: str) -> Tuple[Optional[str], float]:
+        """Pre-scan for customer names using Mr./Mrs./Ms./Shri/Smt title patterns."""
+        lines = text.split('\n')
+        title_pat = re.compile(
+            r'(?:Mr\.?|Mrs\.?|Ms\.?|Shri\.?|Smt\.?)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)',
+            re.IGNORECASE
+        )
+        for line in lines:
+            m = title_pat.search(line)
+            if m:
+                candidate = m.group(0).strip()
+                # Validate the name part (after title)
+                name_part = m.group(1).strip()
+                if self._is_valid_person_name(name_part):
+                    return candidate, 0.90
+        return None, 0.0
+
     def _extract_name_heuristic(self, text: str, field_name: str) -> Tuple[Optional[str], float]:
         """Extract name (Bank or Customer) implicitly if regex not suitable."""
         lines = text.split('\n')
         best_name = None
         max_conf = 0.0
         
-        # For Bank Name, check against known list directly in text
+        # For Bank Name, check against known bank list directly in text
         if field_name == 'bank_name':
             max_len = 0
-            for b in self.keywords['bank_name']:
-                if b not in ('बैंक का नाम', 'जारीकर्ता बैंक'): # Ignore the generic hindi descriptors for this check
-                    if b.lower() in text.lower() and len(b) > max_len:
-                        best_name = b.title()
-                        max_conf = 0.95
-                        max_len = len(b)
+            for b in self.known_banks:
+                if b.lower() in text.lower() and len(b) > max_len:
+                    best_name = b.title()
+                    max_conf = 0.95
+                    max_len = len(b)
             if best_name:
                 return best_name, max_conf
+        
+        # For Customer Name, first try title-based pre-scan (Mr./Mrs./Ms.)
+        if field_name == 'customer_name':
+            title_name, title_conf = self._extract_name_title_scan(text)
+            if title_name:
+                return title_name, title_conf
 
-        for kws in self.keywords[field_name]: # e.g., 'customer name'
+        for kws in self.keywords[field_name]:
             for idx, line in enumerate(lines):
                 if self._fuzzy_match(line, kws):
                     # Usually name is adjacent or on same line
-                    parts = re.split(kws, line, flags=re.IGNORECASE)
+                    parts = re.split(re.escape(kws), line, flags=re.IGNORECASE)
                     if len(parts) > 1 and len(parts[-1].strip()) > 3:
-                        name_cand = re.sub(r'^[:\-\s]+', '', parts[-1]).strip()
-                        if name_cand:
+                        name_cand = re.sub(r'^[:\-,;\s]+', '', parts[-1]).strip()
+                        # Truncate at common delimiters
+                        name_cand = re.split(r'[,;|]', name_cand)[0].strip()
+                        if field_name == 'customer_name':
+                            if self._is_valid_person_name(name_cand):
+                                return name_cand, 0.85
+                        elif field_name == 'bank_name':
+                            # For bank names extracted by label proximity, validate against known banks
+                            name_lower = name_cand.lower()
+                            for kb in self.known_banks:
+                                if kb in name_lower:
+                                    return kb.title(), 0.85
+                            # If not a known bank, return with lower confidence only if it passes blocklist
+                            if (len(name_cand) > 5 and
+                                not any(t in name_cand.lower() for t in self._bank_blocklist_tokens) and
+                                not any(t in name_cand.lower() for t in ['hypothecation', 'a/c', 'no.'])):
+                                return name_cand, 0.55
+                        else:
                             return name_cand, 0.85
                     
                     # check next line
                     if idx + 1 < len(lines):
                         next_line = lines[idx+1].strip()
                         if len(next_line) > 3 and not re.search(r'\d', next_line):
-                            return next_line, 0.80
+                            if field_name == 'customer_name':
+                                if self._is_valid_person_name(next_line):
+                                    return next_line, 0.80
+                            elif field_name == 'bank_name':
+                                # Validate next-line bank candidates against blocklist too
+                                if (len(next_line) > 5 and
+                                    not any(t in next_line.lower() for t in self._bank_blocklist_tokens)):
+                                    return next_line, 0.70
+                            else:
+                                return next_line, 0.80
                             
         return best_name, max_conf
+
+    def _validate_amount(self, amount: Optional[float]) -> Optional[float]:
+        """Reject implausible loan/disbursed amounts."""
+        if amount is None:
+            return None
+        # Too small: catches year numbers (2025, 2026), page numbers, small digits
+        if amount < 1000:
+            return None
+        # Too large: catches concatenated date+account number strings
+        if amount > 1_000_000_000:
+            return None
+        return amount
 
     def _normalize_currency(self, val_str: Optional[str]) -> Optional[float]:
         if not val_str: return None
@@ -234,14 +415,16 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
         extracted = {}
         confidences = {}
         
-        # 1. Loan Amount
+        # 1. Loan Amount (with amount guard rails)
         val, conf = self._extract_field_proximity(text, 'loan_amount', self.regexes['amount'], is_amount=True)
-        extracted['loan_amount'] = self._normalize_currency(val)
+        raw_amount = self._normalize_currency(val)
+        extracted['loan_amount'] = self._validate_amount(raw_amount)
         confidences['loan_amount'] = conf if extracted['loan_amount'] is not None else 0.0
         
-        # 2. Disbursed Amount
+        # 2. Disbursed Amount (with amount guard rails)
         val, conf = self._extract_field_proximity(text, 'disbursed_amount', self.regexes['amount'], is_amount=True)
-        extracted['disbursed_amount'] = self._normalize_currency(val)
+        raw_amount = self._normalize_currency(val)
+        extracted['disbursed_amount'] = self._validate_amount(raw_amount)
         confidences['disbursed_amount'] = conf if extracted['disbursed_amount'] is not None else 0.0
 
         # 3. Rate of Interest
@@ -269,17 +452,15 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
         extracted['bank_name'] = val
         confidences['bank_name'] = conf if val else 0.0
 
-        # 8. Bank Branch Region (Bank of Baroda specific)
+        # 8. Bank Branch Region (for any bank, not just BoB)
         extracted['bank_branch_region'] = None
         confidences['bank_branch_region'] = 0.0
-        if extracted['bank_name'] and 'baroda' in extracted['bank_name'].lower():
+        if extracted['bank_name']:
             r_val, r_conf = self._extract_name_heuristic(text, 'bank_branch_region')
             if r_val:
                 extracted['bank_branch_region'] = r_val
                 confidences['bank_branch_region'] = r_conf
 
-        # Save confidences mentally to class scope if needed, or structured payload
-        # Pipeline expects standard dict, so we will use validation to reflect rules
         self._last_confidences = confidences
         return extracted
 

@@ -11,6 +11,7 @@ services:
       # Mount source code for hot-reload during development
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
+      - ./tests:/app/tests:ro
     environment:
       # Logging configuration
       - PYTHONUNBUFFERED=1
@@ -33,7 +34,7 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 4G
+          memory: 8G
         reservations:
           cpus: "1"
-          memory: 2G
+          memory: 4G

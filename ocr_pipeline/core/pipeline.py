@@ -12,8 +12,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import cv2
 
-from ..utils import load_config, setup_logging, load_image, clean_text
-from ..utils_pdf import is_pdf, is_pdf_supported, convert_pdf_to_images
+from ..utils import load_config, setup_logging, load_image, clean_text, is_pdf, is_pdf_supported, convert_pdf_to_images
 from ..quality import ImageQualityAssessor, QualityMetrics
 from ..preprocessing import PreprocessingPipeline
 from ..preprocessing.id_enhancer import IDDocumentEnhancer
@@ -87,7 +86,15 @@ class OCRPipeline:
     FIELD_WEIGHTS = {
         'aadhaar': {'aadhaar_number': 0.4, 'name': 0.3, 'date_of_birth': 0.3},
         'pan': {'pan_number': 0.5, 'name': 0.25, 'date_of_birth': 0.25},
-        'vehicle_rc': {'registration_number': 0.4, 'owner_name': 0.2, 'engine_number': 0.2, 'chassis_number': 0.2}
+        'vehicle_rc': {'registration_number': 0.4, 'owner_name': 0.2, 'engine_number': 0.2, 'chassis_number': 0.2},
+        'disbursement_order': {
+            'loan_amount': 0.25,
+            'disbursed_amount': 0.25,
+            'rate_of_interest': 0.15,
+            'tenure_months': 0.15,
+            'customer_name': 0.10,
+            'bank_name': 0.10,
+        },
     }
 
     def __init__(self, config_path: Union[str, Path] = "config.yaml"):
@@ -726,7 +733,7 @@ class OCRPipeline:
             'aadhaar': ['aadhaar_number', 'name', 'date_of_birth'],
             'pan': ['pan_number', 'name', 'date_of_birth'],
             'vehicle_rc': ['registration_number', 'owner_name'],
-            'disbursement_order': ['loan_amount']  # Assume loan amount is critical
+            'disbursement_order': []  # No single field is absolutely mandatory; weighted schema score handles importance
         }
         
         return required_fields_map.get(document_type, ['id_number', 'name'])
@@ -836,6 +843,37 @@ class OCRPipeline:
             validators['fuel_type'] = lambda v: v.upper() in (
                 'PETROL', 'DIESEL', 'CNG', 'LPG', 'ELECTRIC', 'HYBRID'
             )
+        elif document_type == 'disbursement_order':
+            def _safe_float(v):
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    return None
+            def _safe_int(v):
+                try:
+                    return int(float(v))
+                except (ValueError, TypeError):
+                    return None
+
+            validators['loan_amount'] = lambda v: (
+                _safe_float(v) is not None and 1000 <= _safe_float(v) <= 1_000_000_000
+            )
+            validators['disbursed_amount'] = lambda v: (
+                _safe_float(v) is not None and 1000 <= _safe_float(v) <= 1_000_000_000
+            )
+            validators['rate_of_interest'] = lambda v: (
+                _safe_float(v) is not None and 0.1 <= _safe_float(v) <= 40
+            )
+            validators['tenure_months'] = lambda v: (
+                _safe_int(v) is not None and 3 <= _safe_int(v) <= 120
+            )
+            validators['customer_name'] = lambda v: (
+                len(v) >= 3 and not any(
+                    t in v.lower() for t in ['please', 'note', 'authorized', 'mail', 'delete', 'location', 'revoked']
+                )
+            )
+            validators['bank_name'] = lambda v: len(v) >= 3
+            validators['ifsc'] = lambda v: bool(re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', v.strip().upper()))
         
         return validators
 
