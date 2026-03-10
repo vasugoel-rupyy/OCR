@@ -167,37 +167,73 @@ class OCRPipeline:
         template_conf = 0.0
         
         try:
-            # Load image or first page of PDF
+            # 1. Load images (handle Multi-page PDF)
+            pil_images = []
             if is_pdf(image_path):
                 if not is_pdf_supported():
                     raise ValueError(f"pdf2image is not installed to process PDF: {image_path}")
                 pil_images = convert_pdf_to_images(image_path)
-                if not pil_images:
-                    raise ValueError(f"No pages found in PDF: {image_path}")
-                # Use the first page for processing
-                pil_image = pil_images[0]
+            else:
+                img = load_image(image_path)
+                from PIL import Image
+                pil_images = [Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))]
+
+            if not pil_images:
+                raise ValueError(f"No pages/images found in: {image_path}")
+            
+            master_ocr_result = None
+            master_quality_metrics = None
+            primary_image = None
+            
+            # Loop over all pages in the document
+            for idx, pil_image in enumerate(pil_images):
+                page_num = idx + 1
+                self.logger.info(f"Processing page {page_num}/{len(pil_images)}")
+                
                 # Convert PIL RGB to OpenCV BGR
                 image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-            else:
-                image = load_image(image_path)
+                if primary_image is None:
+                    primary_image = image  # Use first page as primary for result report
                 
-            image_shape = image.shape[:2]
+                # Stage 1: Image Quality Assessment
+                stage_start = time.time()
+                quality_metrics = self.quality_assessor.assess(image)
+                
+                if master_quality_metrics is None:
+                    master_quality_metrics = quality_metrics
+                else:
+                    # Merge quality metrics: fail if any page fails
+                    if not quality_metrics.passed:
+                        master_quality_metrics.passed = False
+                        master_quality_metrics.failure_reasons.extend(
+                            [f"Page {page_num}: {r}" for r in quality_metrics.failure_reasons]
+                        )
+                
+                # Stage 2: Image Preprocessing
+                stage_start = time.time()
+                preprocessing_result = self.preprocessing_pipeline.process(image, save_intermediates)
+                processed_image = preprocessing_result['processed_image']
+                
+                # Stage 3: OCR Extraction
+                stage_start = time.time()
+                page_ocr_result = self.ocr_engine.extract_text(processed_image)
+                
+                if master_ocr_result is None:
+                    master_ocr_result = page_ocr_result
+                else:
+                    master_ocr_result.append_page(page_ocr_result, page_num)
             
-            # Stage 1: Image Quality Gate
-            stage_start = time.time()
-            self.logger.debug("Stage 1: Image Quality Assessment")
-            quality_metrics = self.quality_assessor.assess(image)
-            stage_time = (time.time() - stage_start) * 1000
-            self.logger.info(f"Stage 1: Image Quality Assessment - completed in {stage_time:.0f}ms")
+            # Use aggregated results for downstream stages
+            ocr_result = master_ocr_result
+            quality_metrics = master_quality_metrics
+            image = primary_image # Use first page image for region/reporting
+
+            # Log full OCR text for debugging
+            self.logger.info("--- STAGE 3: FINAL OCR TEXT ---")
+            self.logger.info(f"\n{ocr_result.full_text}")
+            self.logger.info("--- END OF OCR TEXT ---")
             
-            if not quality_metrics.passed:
-                self.logger.warning(f"Image failed quality gate: {quality_metrics.failure_reasons}")
-            
-            # Stage 1.5: Document Detection & Segmentation (SKIPPED in this branch)
-            stage_start = time.time()
-            self.logger.info("Stage 1.5: Document Detection & Segmentation - SKIPPED")
-            
-            # Manually create a full-image region
+            # Re-generate regions based on first page (for API consistency)
             h, w = image.shape[:2]
             selected_region = Region(
                 bbox=BoundingBox(0, 0, w, h),
@@ -208,39 +244,11 @@ class OCRPipeline:
             )
             detected_regions = [selected_region]
             num_regions = 1
-            
-            stage_time = (time.time() - stage_start) * 1000
-            self.logger.debug(f"Stage 1.5: Document Detection & Segmentation - bypassed in {stage_time:.0f}ms")
-            
-            # Determine if multiple documents detected (Always False in this branch)
-            multi_document_flag = False
-            conflicting_schemas = False
-            
-            # Stage 2: Preprocessing & Correction
-            stage_start = time.time()
-            self.logger.debug("Stage 2: Image Preprocessing")
-            
-            # Use the manually created full image region
-            region_image = selected_region.image
-            self.logger.debug("Processing full image (segmentation skipped)")
-            
-            # Store region info for result
             region_info = selected_region.to_dict()
             
-            # Preprocess the selected region
-            preprocessing_result = self.preprocessing_pipeline.process(region_image, save_intermediates)
-            processed_image = preprocessing_result['processed_image']
-            stage_time = (time.time() - stage_start) * 1000
-            self.logger.info(f"Stage 2: Image Preprocessing - completed in {stage_time:.0f}ms")
-
-            # Stage 3: OCR
-            stage_start = time.time()
-            self.logger.debug("Stage 3: OCR Extraction")
-            
-            # Run standard OCR first (needed for classification and general text)
-            ocr_result = self.ocr_engine.extract_text(processed_image)
-            stage_time = (time.time() - stage_start) * 1000
-            self.logger.info(f"Stage 3: OCR Extraction - completed in {stage_time:.0f}ms")
+            # Additional flags
+            multi_document_flag = False
+            conflicting_schemas = False
             
             # Auto-classify if needed
             if document_type == 'auto':
@@ -386,11 +394,14 @@ class OCRPipeline:
             
             # Check if mandatory fields are present
             required_fields = self._get_required_fields(document_type)
-            mandatory_fields_present = all(field in extracted_fields for field in required_fields)
+            mandatory_fields_present = all(
+                field in extracted_fields and extracted_fields[field] is not None 
+                for field in required_fields
+            )
             
-            # Simple validation scores (since we don't have processor methods)
-            # Semantic score based on field extraction success
-            semantic_score = len(extracted_fields) / max(len(required_fields), 1) if required_fields else 1.0
+            # Semantic score based on field extraction success (non-null values)
+            non_null_extracted = sum(1 for v in extracted_fields.values() if v is not None)
+            semantic_score = non_null_extracted / max(len(required_fields), 1) if required_fields else 1.0
             
             # Layout score (simplified - based on OCR confidence)
             layout_score = ocr_confidence_score
@@ -709,7 +720,7 @@ class OCRPipeline:
             # Fallback to unweighted count
             required = self._get_required_fields(document_type)
             if not required: return 1.0
-            found = sum(1 for f in required if f in extracted_fields)
+            found = sum(1 for f in required if f in extracted_fields and extracted_fields[f] is not None)
             return found / len(required)
             
         weights = self.FIELD_WEIGHTS[document_type]
@@ -718,7 +729,7 @@ class OCRPipeline:
         
         for field, weight in weights.items():
             total_weight += weight
-            if field in extracted_fields:
+            if field in extracted_fields and extracted_fields[field] is not None:
                 score += weight
                 
         # Handle optional/extra fields contribution? 

@@ -136,9 +136,9 @@ async def process_url(request: OCRRequest):
             shutil.copyfileobj(response.raw, tmp_file)
             tmp_path = tmp_file.name
         
-        final_path = await _handle_pdf_conversion(tmp_path)
-        if final_path != tmp_path:
-            tmp_image_path = final_path
+        # No need to pre-convert PDF here, the pipeline handles it natively now
+        # and supports multi-page aggregation.
+        final_path = tmp_path
             
         return await _run_pipeline_core(final_path, request.document_type)
     finally:
@@ -165,9 +165,8 @@ async def process_file(
             shutil.copyfileobj(file.file, tmp_file)
             tmp_path = tmp_file.name
             
-        final_path = await _handle_pdf_conversion(tmp_path)
-        if final_path != tmp_path:
-            tmp_image_path = final_path
+        # Pass the PDF/Image path directly to the pipeline
+        final_path = tmp_path
             
         return await _run_pipeline_core(final_path, document_type)
     finally:
@@ -187,7 +186,9 @@ async def process_file_with_type(
 
 def main():
     """Main entry point for running the server."""
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    # Set reload=True for development to pick up mounted volume changes
+    # Note: Application must be passed as an import string for reload to work
+    uvicorn.run("ocr_pipeline.api.server:app", host="0.0.0.0", port=8000, reload=True)
 
 
 if __name__ == "__main__":

@@ -65,14 +65,7 @@ class OCRResult:
         return [w for w in self.words if w.is_numeric]
     
     def get_text_by_region(self, region: Tuple[int, int, int, int]) -> str:
-        """Get text within a specific region.
-        
-        Args:
-            region: (x, y, width, height) bounding box
-            
-        Returns:
-            Concatenated text from region
-        """
+        """Get text within a specific region."""
         x, y, w, h = region
         words_in_region = []
         
@@ -87,3 +80,39 @@ class OCRResult:
                 words_in_region.append(word.text)
         
         return ' '.join(words_in_region)
+
+    def append_page(self, other: 'OCRResult', page_num: int) -> None:
+        """Append results from another page.
+        
+        Args:
+           other: OCRResult from the next page
+           page_num: Page number being appended
+        """
+        if not other:
+            return
+            
+        # Append text with separator
+        separator = f"\n--- Page {page_num} ---\n"
+        if self.full_text:
+            self.full_text += separator
+        self.full_text += other.full_text
+        
+        # Append words and lines
+        # NOTE: We keep coordinates as-is (per-page) since processors 
+        # usually rely on proximity and keywords rather than global coordinates
+        self.words.extend(other.words)
+        self.lines.extend(other.lines)
+        
+        # Update statistics
+        total_prev = self.total_words
+        total_new = other.total_words
+        
+        if total_prev + total_new > 0:
+            self.mean_confidence = (
+                self.mean_confidence * total_prev + 
+                other.mean_confidence * total_new
+            ) / (total_prev + total_new)
+            
+        self.total_words += total_new
+        self.low_confidence_words += other.low_confidence_words
+        self.numeric_words += other.numeric_words
