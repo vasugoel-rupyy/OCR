@@ -519,9 +519,19 @@ class OCRPipeline:
             # Stage 8: Decision Making
             stage_start = time.time()
             self.logger.debug("Stage 8: Decision Making")
+            
+            # Special case for quality bypass:
+            # If extraction is successful (schema_score >= 0.6), allow bypassing hard quality reject 
+            # for all types (especially for DOs and noisy IDs).
+            effective_quality_passed = quality_metrics.passed
+            if not effective_quality_passed:
+                if document_confidence.schema_score >= 0.60:
+                    self.logger.info(f"High extraction completeness ({document_confidence.schema_score:.2f}) - bypassing hard quality reject")
+                    effective_quality_passed = True
+            
             decision_result = self.decision_engine.make_decision(
                 document_confidence=document_confidence,
-                quality_passed=quality_metrics.passed,
+                quality_passed=effective_quality_passed,
                 text_detected=text_detected,
                 mandatory_fields_present=mandatory_fields_present,
                 non_alphanumeric_ratio=non_alphanumeric_ratio,

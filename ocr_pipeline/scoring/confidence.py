@@ -114,28 +114,40 @@ class ConfidenceScorer:
         Returns:
             DocumentConfidence object
         """
-        # Calculate weighted final score
-        # Using max(0, min(1, ...)) for safety
+        # Rebalanced weights prioritizing extraction completeness (schema_score)
+        # Weights should sum to 1.0
+        w_image = 0.05
+        w_ocr = 0.10
+        w_regex = 0.15
+        w_fuzzy = 0.10
+        w_layout = 0.10
+        w_kv = 0.10
+        w_consistency = 0.10
+        w_schema = 0.35  # Increased from 0.15
+        w_distribution = 0.02
+        w_spatial = 0.03
+
         final_score = (
-            self.w_image * image_quality_score +
-            self.w_ocr * ocr_confidence_score +
-            self.w_regex * regex_score +
-            self.w_fuzzy * fuzzy_score +
-            self.w_layout * layout_score +
-            self.w_kv * kv_score +
-            self.w_consistency * consistency_score +
-            self.w_schema * schema_score +
-            self.w_distribution * distribution_score +
-            self.w_spatial * spatial_compactness_score
+            w_image * image_quality_score +
+            w_ocr * ocr_confidence_score +
+            w_regex * regex_score +
+            w_fuzzy * fuzzy_score +
+            w_layout * layout_score +
+            w_kv * kv_score +
+            w_consistency * consistency_score +
+            w_schema * schema_score +
+            w_distribution * distribution_score +
+            w_spatial * spatial_compactness_score
         )
         
-        # Ideally weights sum to 1.0, but normalize just in case
-        total_weight = (self.w_image + self.w_ocr + self.w_regex + self.w_fuzzy + 
-                       self.w_layout + self.w_kv + self.w_consistency + 
-                       self.w_schema + self.w_distribution + self.w_spatial)
+        # Aggressive damping: penalize heavily if schema_score is low
+        # multiplier is 0.05 if schema_score is 0, and ramps to 1.0 if schema_score is 1.0
+        multiplier = 0.05 + 0.95 * schema_score
+        final_score *= multiplier
         
-        if total_weight > 0:
-            final_score = final_score / total_weight
+        # If schema_score is 0, cap the score at 0.10 regardless of other signals
+        if schema_score == 0:
+            final_score = min(final_score, 0.10)
         
         final_score = max(0.0, min(1.0, final_score))
         

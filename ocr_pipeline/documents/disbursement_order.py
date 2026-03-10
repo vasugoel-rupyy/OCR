@@ -51,7 +51,7 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
                 'वितरित राशि', 'जारी राशि', 'खाते में जमा राशि', 'भुगतान राशि',
                 'net proceeds', 'disbursement value', 'finance amount',
                 'total payable', 'amount payable',
-                'loan disbursement', 'case disbursed',
+                'loan disbursement', 'case disbursed', 'net finance',
             ],
             'rate_of_interest': [
                 'interest rate', 'rate of interest', 'roi',
@@ -127,6 +127,7 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
             'attached', 'reference', 'kindly', 'delete', 'mail',
             'proprietary', 'revoked', 'applicant', 'type', 'intended',
             'recipient', 'confidential', 'contain', 'may',
+            'costing', 'purchased', 'model', 'asset', 'changed', 'the',
         }
         
         # Blocklist for bank_name fallback to reject non-bank text
@@ -134,6 +135,7 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
             'code', 'branch', 'security', 'payment', 'charges', 'deposit',
             'deposited', 'hypothecatee', 'cap', 'blue', 'book', 'delayed',
             'insurance', 'cover', 'note', 'clause', 'certificate',
+            'purchased', 'costing', 'model', 'asset', 'customer', 'changed',
         }
         
         self.regexes = {
@@ -371,8 +373,8 @@ class DisbursementOrderProcessor(BaseDocumentProcessor):
         """Reject implausible loan/disbursed amounts."""
         if amount is None:
             return None
-        # Too small: catches year numbers (2025, 2026), page numbers, small digits
-        if amount < 1000:
+        # Too small: catches year numbers (2025, 2026), page numbers, small digits, fees
+        if amount < 25000:
             return None
         # Too large: catches concatenated date+account number strings
         if amount > 1_000_000_000:

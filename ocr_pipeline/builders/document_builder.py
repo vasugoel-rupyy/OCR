@@ -124,19 +124,25 @@ class DocumentBuilder:
 
     @staticmethod
     def _calculate_overall_confidence(doc: BaseDocument) -> float:
-        """Calculate overall confidence based on present fields."""
+        """Calculate overall confidence based on present fields and schema completeness."""
         scores = []
+        total_fields = 0
         for field_name, field_value in doc:
              # Skip metadata fields
              if field_name in ['template_used', 'template_confidence', 'overall_confidence', 'decision', 'raw_extraction']:
                  continue
+             
+             total_fields += 1
+             # If field is present, use its confidence, otherwise use 0.0
              if isinstance(field_value, FieldValue) and field_value.value:
                  scores.append(field_value.confidence)
+             else:
+                 scores.append(0.0)
         
-        if not scores:
+        if total_fields == 0:
             return 0.0
             
-        return sum(scores) / len(scores)
+        return sum(scores) / total_fields
 
     @staticmethod
     def _make_decision(doc: BaseDocument) -> Decision:
