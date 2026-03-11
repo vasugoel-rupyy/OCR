@@ -1,15 +1,16 @@
 # OCR Pipeline
 
-A high-performance, self-hosted OCR system designed to extract structured data from Indian Identity Documents (Aadhaar, PAN, Vehicle RC). It utilizes a multi-layered approach involving image preprocessing, document detection, dual-pass OCR, and a 10-component validation system.
+A high-performance, self-hosted OCR system designed to extract structured data from Indian Identity Documents (Aadhaar, PAN, Vehicle RC) and Financial Documents (Disbursement Orders). It utilizes a multi-layered approach involving image preprocessing, document detection, dual-pass OCR, and a 10-component validation system. It has seamless support for multi-page PDFs, aggregating extractions perfectly.
 
 ## Features
 
 ### 🧠 Core Orchestration
 
-- **Structured Data Extraction**: Returns strictly typed Pydantic models for Aadhaar, PAN, and RC documents.
+- **Structured Data Extraction**: Returns strictly typed Pydantic models for Aadhaar, PAN, RC, and Disbursement Order documents.
 - **Robust Fallback OCR**: Uses advanced preprocessing and full-text OCR when template matching is disabled or fails.
 - **Multilingual Support**: Supports English and Hindi/Devanagari text extraction with specialized numeral normalization.
 - **Document Classification**: Automatically identifies document types based on keyword frequency and spatial patterns.
+- **Multi-page PDF Handling**: Automatically converts, processes, and aggregates results from multiple pages in PDF documents.
 
 ### 📉 10-Component Scoring Model
 
@@ -65,8 +66,7 @@ The system explains its decisions via a weighted confidence score [0-1] based on
    uv run ocr-pipeline-api
    ```
 
-
-Visit `http://localhost:8000/docs` to access the API documentation.
+Visit `http://localhost:8000/docs` to access the API documentation and test the endpoints directly from your browser, such as the direct file upload feature `POST /ocr/process_file`.
 
 ---
 
