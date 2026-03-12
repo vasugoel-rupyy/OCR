@@ -108,6 +108,7 @@ class DocumentBuilder:
         fields['bank_name'] = DocumentBuilder._create_field(raw_data.get('bank_name'), confidence_scores.get('bank_name', 0.8))
         fields['ifsc'] = DocumentBuilder._create_field(raw_data.get('ifsc'), confidence_scores.get('ifsc', 0.8))
         fields['bank_branch_region'] = DocumentBuilder._create_field(raw_data.get('bank_branch_region'), confidence_scores.get('bank_branch_region', 0.8))
+        fields['branch_id'] = DocumentBuilder._create_field(raw_data.get('branch_id'), confidence_scores.get('branch_id', 0.8))
         
         doc = DisbursementOrderDocument(**fields)
         doc.overall_confidence = DocumentBuilder._calculate_overall_confidence(doc)

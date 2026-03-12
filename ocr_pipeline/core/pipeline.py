@@ -160,6 +160,8 @@ class OCRPipeline:
             document_type = 'aadhaar'
         elif document_type in ['rc', 'vehicle', 'car_rc']:
             document_type = 'vehicle_rc'
+        elif document_type in ['do', 'disbursement']:
+            document_type = 'disbursement_order'
         
         self.logger.info(f"Processing document: {image_path} (type: {document_type})")
         
@@ -211,7 +213,26 @@ class OCRPipeline:
                 
                 # Stage 2: Image Preprocessing
                 stage_start = time.time()
-                preprocessing_result = self.preprocessing_pipeline.process(image, save_intermediates)
+                
+                # Disable perspective correction for Disbursement Orders to prevent over-cropping
+                current_preprocessing_config = self.config.get('preprocessing', {}).copy()
+                if document_type == 'disbursement_order':
+                    if current_preprocessing_config.get('enable_perspective_correction'):
+                        self.logger.info("Disabling perspective correction for Disbursement Order to ensure full-page coverage")
+                        current_preprocessing_config['enable_perspective_correction'] = False
+                
+                # We need to temporarily override the config or use a modified instance
+                # Since PreprocessingPipeline uses fixed config from init, we'll patch the instance or logic
+                orig_enable_perspective = self.preprocessing_pipeline.corrector.enable_perspective
+                if document_type == 'disbursement_order':
+                    self.preprocessing_pipeline.corrector.enable_perspective = False
+                
+                try:
+                    preprocessing_result = self.preprocessing_pipeline.process(image, save_intermediates)
+                finally:
+                    # Restore original setting
+                    self.preprocessing_pipeline.corrector.enable_perspective = orig_enable_perspective
+                    
                 processed_image = preprocessing_result['processed_image']
                 
                 # Stage 3: OCR Extraction
@@ -439,14 +460,18 @@ class OCRPipeline:
             schema_score = self._calculate_weighted_schema_score(extracted_fields, document_type)
             regex_score = schema_score # align regex score with schema score for consistency
             
-            # 5.9 Spatial Compactness (NEW)
+            # 5.9 Spatial Compactness (FIXED: Attributes were .words and .lines, not .boxes and .texts)
             spatial_score = 1.0  # Default
-            if hasattr(ocr_result, 'boxes') and ocr_result.boxes and hasattr(ocr_result, 'texts'):
+            if (hasattr(ocr_result, 'words') and ocr_result.words):
                 try:
+                    # Extract boxes and texts from WordData objects
+                    boxes = [w.bbox for w in ocr_result.words]
+                    texts = [w.text for w in ocr_result.words]
+                    
                     spatial_score, spatial_details = self.spatial_validator.validate_field_compactness(
                         extracted_fields,
-                        ocr_result.boxes,
-                        ocr_result.texts
+                        boxes,
+                        texts
                     )
                     self.logger.debug(f"Spatial validation score: {spatial_score:.3f}")
                     

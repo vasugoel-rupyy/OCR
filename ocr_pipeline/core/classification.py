@@ -35,7 +35,8 @@ class DocumentClassifier:
                 'credit facility release', 'loan release advice', 'disbursement memo',
                 'loan booking confirmation', 'loan account created', 'first disbursement',
                 'amount credited to account', 'ऋण वितरण', 'वितरण आदेश', 'स्वीकृत ऋण',
-                'ऋण जारी', 'ऋण खाता', 'बैंक द्वारा वितरित'
+                'ऋण जारी', 'ऋण खाता', 'बैंक द्वारा वितरित',
+                'bank of baroda', 'baroda', 'bob', 'lead acknowledgement receipt'
             ]
         }
         
