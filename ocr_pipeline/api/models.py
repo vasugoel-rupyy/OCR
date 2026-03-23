@@ -12,6 +12,7 @@ class OCRRequest(BaseModel):
     """Request model for OCR processing."""
     image_url: str
     document_type: Optional[str] = 'auto'
+    webhook_url: Optional[str] = None
 
 
 class OCRResponse(BaseModel):

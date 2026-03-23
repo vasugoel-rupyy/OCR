@@ -1,10 +1,33 @@
 services:
+  ollama-service:
+    build:
+      context: .
+      dockerfile: Ollama.Dockerfile
+      args:
+        # Allows you to dynamically change what model gets baked (e.g. OLLAMA_MODEL=qwen2.5:0.5b docker compose up)
+        OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
+    image: custom-ollama-baked:latest
+    container_name: ollama-service
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # Use Docker compose GPU passthrough if the host has one 
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # NOTE: Since the model is completely baked in via Ollama.Dockerfile, we don't need a volume here!
   ocr-pipeline-api:
     build:
       context: .
       dockerfile: Dockerfile
     image: ocr-pipeline:latest
     container_name: ocr-pipeline-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     volumes:
@@ -16,6 +39,7 @@ services:
       # Logging configuration
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
     restart: unless-stopped
     healthcheck:
       test:

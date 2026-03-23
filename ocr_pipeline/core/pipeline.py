@@ -21,7 +21,7 @@ from ..validation.anchors import AnchorValidator
 from ..validation.distribution import DistributionAnalyzer
 from ..validation.key_value import KeyValueExtractor
 from ..ocr import PaddleOCREngine, OCRResult
-from ..documents import AadhaarExtractor, PANExtractor, VehicleRCExtractor, DisbursementOrderProcessor, BaseDocumentProcessor
+from ..documents import AadhaarExtractor, PANExtractor, VehicleRCExtractor, BaseDocumentProcessor
 from ..documents.base import BaseDocument
 from ..documents.aadhaar import AadhaarDocument
 from ..documents.pan import PanDocument
@@ -128,7 +128,7 @@ class OCRPipeline:
         self.aadhaar_extractor = AadhaarExtractor()
         self.pan_extractor = PANExtractor()
         self.vehicle_rc_extractor = VehicleRCExtractor()
-        self.disbursement_order_extractor = DisbursementOrderProcessor()
+        
         
         # Initialize segmentation pipeline
         self.segmentation_pipeline = SegmentationPipeline(self.config.get('segmentation', {}))
@@ -376,8 +376,27 @@ class OCRPipeline:
             stage_start = time.time()
             self.logger.debug("Stage 5: Field Extraction")
             
-            extractor = self._get_extractor(document_type)
-            extracted_fields = extractor.extract_fields(ocr_result)
+            if document_type == 'disbursement_order':
+                import sys
+                from pathlib import Path
+                root_dir = str(Path(__file__).parent.parent.parent)
+                if root_dir not in sys.path: sys.path.insert(0, root_dir)
+                from ocr_pipeline.api.ollama_service import OllamaExtractor
+                
+                self.logger.info("Using Ollama Mistral for DO extraction...")
+                ollama_result = OllamaExtractor.extract_disbursement_order_sync(ocr_result.full_text)
+                
+                extracted_fields = {}
+                ollama_decision = "REVIEW"
+                if "extracted_fields" in ollama_result:
+                    for k, v in ollama_result["extracted_fields"].items():
+                        extracted_fields[k] = v.get("value") if isinstance(v, dict) else v
+                    ollama_decision = ollama_result.get("decision", "REVIEW")
+                else:
+                    extracted_fields = ollama_result
+            else:
+                extractor = self._get_extractor(document_type)
+                extracted_fields = extractor.extract_fields(ocr_result)
             
             # Merge fields from enhanced pass if available
             if ocr_result_enh:
@@ -434,76 +453,87 @@ class OCRPipeline:
             stage_start = time.time()
             self.logger.debug("Stage 6: Post-OCR Validation & Fuzzy Matching")
             
-            # 5.1 Token Normalization (in-place or separate? keeping raw text for now, using norm helper)
-            # 5.2 Regex Score (Redundant with Schema Score in weighted model, setting to 1.0 or same as schema)
-            # We'll set it to be consistent with Schema Score later
-            regex_score = 1.0 
-            
-            
-            # 5.3 Fuzzy Anchors (use 'aadhaar' for all ID types as fallback)
-            anchor_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
-            fuzzy_score, anchor_details = self.anchor_validator.validate_anchors(ocr_result.full_text, anchor_doc_type)
-            
-            # 5.4 Layout (already done)
-            
-            # 5.5 KV Proximity
-            kv_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
-            kv_score = self.kv_extractor.validate_kv_pairs(ocr_result, kv_doc_type)
-            
-            # 5.6 Consistency (already done)
-            
-            # 5.7 Distribution
-            dist_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
-            distribution_score, dist_metrics = self.distribution_analyzer.analyze(ocr_result.full_text, dist_doc_type)
-            
-            # 5.8 Schema Completeness (Weighted)
-            schema_score = self._calculate_weighted_schema_score(extracted_fields, document_type)
-            regex_score = schema_score # align regex score with schema score for consistency
-            
-            # 5.9 Spatial Compactness (FIXED: Attributes were .words and .lines, not .boxes and .texts)
-            spatial_score = 1.0  # Default
-            if (hasattr(ocr_result, 'words') and ocr_result.words):
-                try:
-                    # Extract boxes and texts from WordData objects
-                    boxes = [w.bbox for w in ocr_result.words]
-                    texts = [w.text for w in ocr_result.words]
-                    
-                    spatial_score, spatial_details = self.spatial_validator.validate_field_compactness(
-                        extracted_fields,
-                        boxes,
-                        texts
-                    )
-                    self.logger.debug(f"Spatial validation score: {spatial_score:.3f}")
-                    
-                    # Check for conflicting schemas
-                    if spatial_details.get('num_clusters', 1) > 1:
-                        conflicting_schemas = True
-                        self.logger.warning("Multiple spatial clusters detected - possible conflicting schemas")
-                except Exception as e:
-                    self.logger.warning(f"Spatial validation failed: {e}")
-                    spatial_score = 1.0
-            
-            # 5.10 Business Rules
-            business_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
-            business_valid, business_reasons = self.business_rule_validator.validate(extracted_fields, business_doc_type)
-            if not business_valid:
-                self.logger.info(f"Business rule validation failed: {business_reasons}")
-
-            # Explicit check for critical fields to provide detailed rejection reasons
-            if document_type in self.FIELD_WEIGHTS:
-                weights = self.FIELD_WEIGHTS[document_type]
-                missing_critical = []
-                for field, weight in weights.items():
-                    # fields with high weight (>= 0.25) are considered critical enough to mention
-                    if weight >= 0.25 and field not in extracted_fields:
-                        missing_critical.append(field)
+            if document_type == 'disbursement_order':
+                regex_score, fuzzy_score, kv_score, distribution_score, spatial_score = 1.0, 1.0, 1.0, 1.0, 1.0
+                schema_score = 1.0
+                conflicting_schemas = False
                 
-                if missing_critical:
-                    missing_str = ", ".join(missing_critical)
-                    business_reasons.append(f"Missing critical field(s): {missing_str}")
-                    # Also set mandatory_fields_present to False if critical fields are missing
-                    # This ensures DecisionEngine sees it as a data completeness failure
-                    mandatory_fields_present = False
+                # Use Ollama's decision as validation state
+                business_valid = (ollama_decision == "APPROVED")
+                business_reasons = [] if business_valid else [f"Ollama determined decision: {ollama_decision}"]
+                mandatory_fields_present = True if business_valid else mandatory_fields_present
+                self.logger.info(f"Stage 6 Bypassed: Ollama result dictates validation (Decision: {ollama_decision}).")
+            else:
+                # 5.1 Token Normalization (in-place or separate? keeping raw text for now, using norm helper)
+                # 5.2 Regex Score (Redundant with Schema Score in weighted model, setting to 1.0 or same as schema)
+                # We'll set it to be consistent with Schema Score later
+                regex_score = 1.0 
+                
+                
+                # 5.3 Fuzzy Anchors (use 'aadhaar' for all ID types as fallback)
+                anchor_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                fuzzy_score, anchor_details = self.anchor_validator.validate_anchors(ocr_result.full_text, anchor_doc_type)
+                
+                # 5.4 Layout (already done)
+                
+                # 5.5 KV Proximity
+                kv_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                kv_score = self.kv_extractor.validate_kv_pairs(ocr_result, kv_doc_type)
+                
+                # 5.6 Consistency (already done)
+                
+                # 5.7 Distribution
+                dist_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                distribution_score, dist_metrics = self.distribution_analyzer.analyze(ocr_result.full_text, dist_doc_type)
+                
+                # 5.8 Schema Completeness (Weighted)
+                schema_score = self._calculate_weighted_schema_score(extracted_fields, document_type)
+                regex_score = schema_score # align regex score with schema score for consistency
+                
+                # 5.9 Spatial Compactness (FIXED: Attributes were .words and .lines, not .boxes and .texts)
+                spatial_score = 1.0  # Default
+                if (hasattr(ocr_result, 'words') and ocr_result.words):
+                    try:
+                        # Extract boxes and texts from WordData objects
+                        boxes = [w.bbox for w in ocr_result.words]
+                        texts = [w.text for w in ocr_result.words]
+                        
+                        spatial_score, spatial_details = self.spatial_validator.validate_field_compactness(
+                            extracted_fields,
+                            boxes,
+                            texts
+                        )
+                        self.logger.debug(f"Spatial validation score: {spatial_score:.3f}")
+                        
+                        # Check for conflicting schemas
+                        if spatial_details.get('num_clusters', 1) > 1:
+                            conflicting_schemas = True
+                            self.logger.warning("Multiple spatial clusters detected - possible conflicting schemas")
+                    except Exception as e:
+                        self.logger.warning(f"Spatial validation failed: {e}")
+                        spatial_score = 1.0
+                
+                # 5.10 Business Rules
+                business_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                business_valid, business_reasons = self.business_rule_validator.validate(extracted_fields, business_doc_type)
+                if not business_valid:
+                    self.logger.info(f"Business rule validation failed: {business_reasons}")
+    
+                # Explicit check for critical fields to provide detailed rejection reasons
+                if document_type in self.FIELD_WEIGHTS:
+                    weights = self.FIELD_WEIGHTS[document_type]
+                    missing_critical = []
+                    for field, weight in weights.items():
+                        # fields with high weight (>= 0.25) are considered critical enough to mention
+                        if weight >= 0.25 and field not in extracted_fields:
+                            missing_critical.append(field)
+                    
+                    if missing_critical:
+                        missing_str = ", ".join(missing_critical)
+                        business_reasons.append(f"Missing critical field(s): {missing_str}")
+                        # Also set mandatory_fields_present to False if critical fields are missing
+                        # This ensures DecisionEngine sees it as a data completeness failure
+                        mandatory_fields_present = False
 
             stage_time = (time.time() - stage_start) * 1000
             self.logger.info(f"Stage 6: Validation & Fuzzy Matching - completed in {stage_time:.0f}ms")
@@ -732,8 +762,6 @@ class OCRPipeline:
             return self.pan_extractor
         elif document_type == 'vehicle_rc':
             return self.vehicle_rc_extractor
-        elif document_type == 'disbursement_order':
-            return self.disbursement_order_extractor
         else:
             # Default to aadhaar for unknown types
             self.logger.warning(f"Unknown document type: {document_type}, defaulting to aadhaar extractor")

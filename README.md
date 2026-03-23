@@ -147,6 +147,24 @@ docker tag ocr-pipeline:prod your-registry/ocr-pipeline:v1.2.0
 docker push your-registry/ocr-pipeline:v1.2.0
 ```
 
+### High-RAM Machine & Production LLM Architecture
+The OCR pipeline now natively uses a Multi-Container Architecture via Docker Compose. The deep extraction intelligence relies on **Ollama** running locally inside the Docker bridge network.
+
+**Memory Requirements for Models (`OLLAMA_MODEL`)**
+- `mistral` (Default): Requires **~4.5GB to 5GB** of free RAM. Excellent accuracy. Ideal for production machines.
+- `qwen2.5:0.5b`: Requires **~1GB** of free RAM. Very fast, fits on local development laptops. 
+
+When you run `docker compose up --build`, Docker will automatically parse your `env` variables and permanently bake your selected model directly into a custom autonomous container (`Ollama.Dockerfile`) alongside the API!
+
+```bash
+# Deploy on a High-RAM machine with Mistral (Default):
+docker compose up --build -d
+
+# Deploy locally on a low-RAM laptop with a smaller model:
+OLLAMA_MODEL=qwen2.5:0.5b docker compose up --build -d
+```
+Because Ollama is a completely self-contained sidecar in the same network, the API bypasses all OS firewalls natively via `http://ollama-service:11434`.
+
 **Deployment platforms:**
 - **AWS**: ECS, Fargate, or EC2 with Docker
 - **Google Cloud**: Cloud Run or GKE
