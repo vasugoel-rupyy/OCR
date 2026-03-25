@@ -150,11 +150,11 @@ INPUT OCR TEXT:
 class OllamaExtractor:
     @staticmethod
     async def extract_disbursement_order(raw_text: str) -> Dict[str, Any]:
-        """Extracts fields from a Disbursement Order using mistral model via Ollama."""
+        """Extracts fields from a Disbursement Order using the Qwen model via Ollama."""
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
-            "model": os.getenv("OLLAMA_MODEL", "mistral"),
+            "model": os.getenv("OLLAMA_MODEL", "qwen3.5:0.8B"),
             "prompt": prompt,
             "stream": False,
             "format": "json"  # Hints ollama to return JSON
@@ -220,11 +220,11 @@ class OllamaExtractor:
 
     @staticmethod
     def extract_disbursement_order_sync(raw_text: str) -> Dict[str, Any]:
-        """Extracts fields from a Disbursement Order using mistral model synchronously."""
+        """Extracts fields from a Disbursement Order using the Qwen model synchronously."""
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
-            "model": os.getenv("OLLAMA_MODEL", "mistral"),
+            "model": os.getenv("OLLAMA_MODEL", "qwen3.5:0.8B"),
             "prompt": prompt,
             "stream": False,
             "format": "json"

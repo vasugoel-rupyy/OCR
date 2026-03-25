@@ -116,7 +116,7 @@ async def _run_pipeline_core(file_path: str, doc_type: str) -> OCRResponse:
 async def _process_and_webhook(file_path: str, doc_type: str, webhook_url: str):
     """Background task to process document and send result to webhook."""
     try:
-        # Run OCR pipeline, which natively extracts fields using Ollama Mistral if it's a disbursement order
+        # Run OCR pipeline, which natively extracts fields using the Ollama model if it's a disbursement order
         result = await _run_pipeline_core(file_path, doc_type)
                 
         # Send to webhook

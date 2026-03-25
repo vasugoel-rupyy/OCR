@@ -1,7 +1,7 @@
 FROM ollama/ollama:latest
 
-# Define the model to bake in (defaults to mistral, overrideable at build time)
-ARG OLLAMA_MODEL=mistral
+# Define the model to bake in (defaults to qwen, overrideable at build time)
+ARG OLLAMA_MODEL=qwen3.5:0.8B
 
 # CRITICAL FIX: The base ollama image declares /root/.ollama as a VOLUME, 
 # which means anything downloaded to it during Docker build gets instantly discarded.

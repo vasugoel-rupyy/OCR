@@ -383,7 +383,7 @@ class OCRPipeline:
                 if root_dir not in sys.path: sys.path.insert(0, root_dir)
                 from ocr_pipeline.api.ollama_service import OllamaExtractor
                 
-                self.logger.info("Using Ollama Mistral for DO extraction...")
+                self.logger.info("Using Ollama Qwen for DO extraction...")
                 ollama_result = OllamaExtractor.extract_disbursement_order_sync(ocr_result.full_text)
                 
                 extracted_fields = {}
