@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Ollama.Dockerfile
       args:
-        # Allows you to dynamically change what model gets baked (e.g. OLLAMA_MODEL=qwen2.5:0.5b docker compose up)
-        OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:0.8B}
+        # Allows you to dynamically change what model gets baked (e.g. OLLAMA_MODEL=qwen2.5:1.5B docker compose up)
+        OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5B}
     image: custom-ollama-baked:latest
     container_name: ollama-service
     ports:
@@ -34,7 +34,7 @@ services:
       # Logging configuration
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:0.8B}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:1.5B}
     restart: unless-stopped
     healthcheck:
       test:

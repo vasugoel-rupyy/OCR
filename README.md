@@ -151,7 +151,7 @@ docker push your-registry/ocr-pipeline:v1.2.0
 The OCR pipeline now natively uses a Multi-Container Architecture via Docker Compose. The deep extraction intelligence relies on **Ollama** running locally inside the Docker bridge network.
 
 **Memory Requirements for Models (`OLLAMA_MODEL`)**
-- `qwen2.5:0.5b` (Default): Requires **~1GB** of free RAM. Very fast, fits on local development laptops. 
+- `qwen2.5:1.5B` (Default): Requires **~2GB** of free RAM. Balanced accuracy and speed.
 - `mistral`: Requires **~4.5GB to 5GB** of free RAM. Excellent accuracy. Ideal for production machines.
  
 
@@ -162,7 +162,7 @@ When you run `docker compose up --build`, Docker will automatically parse your `
 docker compose up --build -d
 
 # Deploy locally on a low-RAM laptop with a smaller model:
-OLLAMA_MODEL=qwen2.5:0.5b docker compose up --build -d
+OLLAMA_MODEL=qwen2.5:1.5B docker compose up --build -d
 ```
 Because Ollama is a completely self-contained sidecar in the same network, the API bypasses all OS firewalls natively via `http://ollama-service:11434`.
 

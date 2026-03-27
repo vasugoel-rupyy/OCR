@@ -154,7 +154,7 @@ class OllamaExtractor:
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
-            "model": os.getenv("OLLAMA_MODEL", "qwen3.5:0.8B"),
+            "model": os.getenv("OLLAMA_MODEL", "qwen2.5:1.5B"),
             "prompt": prompt,
             "stream": False,
             "format": "json"  # Hints ollama to return JSON
@@ -224,7 +224,7 @@ class OllamaExtractor:
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
-            "model": os.getenv("OLLAMA_MODEL", "qwen3.5:0.8B"),
+            "model": os.getenv("OLLAMA_MODEL", "qwen2.5:1.5B"),
             "prompt": prompt,
             "stream": False,
             "format": "json"
