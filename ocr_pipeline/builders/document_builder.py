@@ -1,5 +1,3 @@
-"""Document Builder for converting raw extraction to typed models."""
-
 from typing import Dict, Any, Type, Optional
 from ..documents.base import BaseDocument, FieldValue, Decision
 from ..documents.aadhaar import AadhaarDocument
@@ -7,23 +5,17 @@ from ..documents.pan import PanDocument
 from ..documents.vehicle_rc import RcDocument
 from ..documents.disbursement_order import DisbursementOrderDocument
 
-
 class DocumentBuilder:
-    """Builder class to construct typed documents from raw extraction."""
     
     @staticmethod
     def build_aadhaar(raw_data: Dict[str, Any], confidence_scores: Dict[str, float] = None) -> AadhaarDocument:
-        """Build AadhaarDocument from raw data."""
         if confidence_scores is None:
             confidence_scores = {}
             
         fields = {}
-        # Map critical fields
         fields['aadhaar_number'] = DocumentBuilder._create_field(raw_data.get('aadhaar_number'), confidence_scores.get('aadhaar_number', 0.9))
         fields['name'] = DocumentBuilder._create_field(raw_data.get('name'), confidence_scores.get('name', 0.8))
         fields['gender'] = DocumentBuilder._create_field(raw_data.get('gender'), confidence_scores.get('gender', 0.8))
-        
-        # Map optional fields
         fields['date_of_birth'] = DocumentBuilder._create_field(raw_data.get('date_of_birth'), confidence_scores.get('date_of_birth', 0.8))
         fields['year_of_birth'] = DocumentBuilder._create_field(raw_data.get('year_of_birth'), confidence_scores.get('year_of_birth', 0.8))
         fields['address'] = DocumentBuilder._create_field(raw_data.get('address'), confidence_scores.get('address', 0.6))
@@ -31,7 +23,6 @@ class DocumentBuilder:
         fields['vid'] = DocumentBuilder._create_field(raw_data.get('vid'), confidence_scores.get('vid', 0.9))
         fields['enrollment_id'] = DocumentBuilder._create_field(raw_data.get('enrollment_id'), confidence_scores.get('enrollment_id', 0.9))
         
-        # Calculate overall confidence and decision
         doc = AadhaarDocument(**fields)
         doc.overall_confidence = DocumentBuilder._calculate_overall_confidence(doc)
         doc.decision = DocumentBuilder._make_decision(doc)
@@ -40,7 +31,6 @@ class DocumentBuilder:
 
     @staticmethod
     def build_pan(raw_data: Dict[str, Any], confidence_scores: Dict[str, float] = None) -> PanDocument:
-        """Build PanDocument from raw data."""
         if confidence_scores is None:
             confidence_scores = {}
             
@@ -59,19 +49,15 @@ class DocumentBuilder:
 
     @staticmethod
     def build_rc(raw_data: Dict[str, Any], confidence_scores: Dict[str, float] = None) -> RcDocument:
-        """Build RcDocument from raw data."""
         if confidence_scores is None:
             confidence_scores = {}
             
         fields = {}
-        # Critical
         fields['registration_number'] = DocumentBuilder._create_field(raw_data.get('registration_number'), confidence_scores.get('registration_number', 0.95))
         fields['owner_name'] = DocumentBuilder._create_field(raw_data.get('owner_name'), confidence_scores.get('owner_name', 0.8))
         fields['engine_number'] = DocumentBuilder._create_field(raw_data.get('engine_number'), confidence_scores.get('engine_number', 0.8))
         fields['chassis_number'] = DocumentBuilder._create_field(raw_data.get('chassis_number'), confidence_scores.get('chassis_number', 0.8))
         fields['registration_date'] = DocumentBuilder._create_field(raw_data.get('registration_date'), confidence_scores.get('registration_date', 0.8))
-        
-        # Optional
         fields['vehicle_make_model'] = DocumentBuilder._create_field(raw_data.get('vehicle_make_model'), confidence_scores.get('vehicle_make_model', 0.7))
         fields['vehicle_class'] = DocumentBuilder._create_field(raw_data.get('vehicle_class'), confidence_scores.get('vehicle_class', 0.8))
         fields['fuel_type'] = DocumentBuilder._create_field(raw_data.get('fuel_type'), confidence_scores.get('fuel_type', 0.85))
@@ -92,15 +78,11 @@ class DocumentBuilder:
 
     @staticmethod
     def build_disbursement_order(raw_data: Dict[str, Any], confidence_scores: Dict[str, float] = None) -> DisbursementOrderDocument:
-        """Build DisbursementOrderDocument from raw data."""
         if confidence_scores is None:
             confidence_scores = {}
             
         fields = {}
-        # Critical
         fields['loan_amount'] = DocumentBuilder._create_field(raw_data.get('loan_amount'), confidence_scores.get('loan_amount', 0.8))
-        
-        # Optional
         fields['disbursed_amount'] = DocumentBuilder._create_field(raw_data.get('disbursed_amount'), confidence_scores.get('disbursed_amount', 0.8))
         fields['rate_of_interest'] = DocumentBuilder._create_field(raw_data.get('rate_of_interest'), confidence_scores.get('rate_of_interest', 0.8))
         fields['tenure_months'] = DocumentBuilder._create_field(raw_data.get('tenure_months'), confidence_scores.get('tenure_months', 0.8))
@@ -118,23 +100,19 @@ class DocumentBuilder:
         
     @staticmethod
     def _create_field(value: Optional[str], confidence: float) -> FieldValue:
-        """Helper to create FieldValue."""
         if not value:
             return FieldValue(value=None, confidence=0.0)
         return FieldValue(value=str(value), confidence=confidence)
 
     @staticmethod
     def _calculate_overall_confidence(doc: BaseDocument) -> float:
-        """Calculate overall confidence based on present fields and schema completeness."""
         scores = []
         total_fields = 0
         for field_name, field_value in doc:
-             # Skip metadata fields
              if field_name in ['template_used', 'template_confidence', 'overall_confidence', 'decision', 'raw_extraction']:
                  continue
              
              total_fields += 1
-             # If field is present, use its confidence, otherwise use 0.0
              if isinstance(field_value, FieldValue) and field_value.value:
                  scores.append(field_value.confidence)
              else:
@@ -147,8 +125,6 @@ class DocumentBuilder:
 
     @staticmethod
     def _make_decision(doc: BaseDocument) -> Decision:
-        """Make a decision based on confidence and missing critical fields."""
-        # Check Critical Fields
         critical_missing = False
         
         if isinstance(doc, AadhaarDocument):
@@ -161,7 +137,6 @@ class DocumentBuilder:
              if not doc.registration_number.value: critical_missing = True
 
         elif isinstance(doc, DisbursementOrderDocument):
-             # Just use overall confidence or basic checks
              if not doc.loan_amount.value: critical_missing = True
         
         if critical_missing:

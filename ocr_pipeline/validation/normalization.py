@@ -1,26 +1,19 @@
-"""Token normalization and cleaning logic."""
-
 import re
 from typing import List, Optional
 
 class TokenNormalizer:
-    """Handles text cleaning, normalization, and standardization."""
     
     @staticmethod
     def clean_text(text: str) -> str:
-        """Basic text cleaning."""
         if not text:
             return ""
-        # Remove excessive whitespace
         return " ".join(text.split())
 
     @staticmethod
     def normalize_numeric_field(text: str) -> str:
-        """Convert common OCR confusions in numeric context (O->0, l->1, etc.)."""
         if not text:
             return ""
         
-        # Replacement map for numeric contexts
         replacements = {
             'O': '0', 'o': '0',
             'I': '1', 'l': '1', 'i': '1',
@@ -34,14 +27,12 @@ class TokenNormalizer:
         for char, repl in replacements.items():
             normalized = normalized.replace(char, repl)
             
-        # Strip non-numeric-ish chars (keep dots, commas, dashes)
         normalized = re.sub(r'[^0-9.,-]', '', normalized)
         
         return normalized
 
     @staticmethod
     def convert_devanagari_to_arabic(text: str) -> str:
-        """Convert Devanagari numerals to Arabic digits."""
         if not text:
             return ""
         devanagari_digits = str.maketrans("०१२३४५६७८९", "0123456789")
@@ -49,21 +40,16 @@ class TokenNormalizer:
 
     @staticmethod
     def normalize_date(date_str: str) -> Optional[str]:
-        """Normalize date string to DD/MM/YYYY format."""
         if not date_str:
             return None
             
-        # Clean string
         clean_date = re.sub(r'[^\d/\-\.]', '', date_str)
         
-        # Try different formats
-        # DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
         dmy_match = re.match(r'^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$', clean_date)
         if dmy_match:
             d, m, y = dmy_match.groups()
             return f"{int(d):02d}/{int(m):02d}/{y}"
             
-        # YYYY-MM-DD or YYYY/MM/DD
         ymd_match = re.match(r'^(\d{4})[/\-\.](\d{1,2})[/\-\.](\d{1,2})$', clean_date)
         if ymd_match:
             y, m, d = ymd_match.groups()
@@ -73,11 +59,9 @@ class TokenNormalizer:
 
     @staticmethod
     def standardize_date(date_str: str) -> Optional[str]:
-        """Convert various date formats to YYYY-MM-DD."""
         if not date_str:
             return None
             
-        # normalize separators
         clean_date = re.sub(r'[./]', '-', date_str)
         
         try:

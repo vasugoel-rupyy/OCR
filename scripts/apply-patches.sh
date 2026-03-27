@@ -3,8 +3,6 @@ set -e
 
 echo "Applying PaddleOCR patches..."
 
-# Hardcode the PaddleOCR installation directory to avoid importing PaddleOCR
-# (importing PaddleOCR before the patch would cause a segfault)
 PADDLEOCR_DIR="/usr/local/lib/python3.11/site-packages/paddleocr"
 
 if [ ! -d "$PADDLEOCR_DIR" ]; then
@@ -14,7 +12,6 @@ fi
 
 echo "Found PaddleOCR at: $PADDLEOCR_DIR"
 
-# Apply the ONNX fix patch
 UTILITY_FILE="$PADDLEOCR_DIR/tools/infer/utility.py"
 
 if [ ! -f "$UTILITY_FILE" ]; then
@@ -24,7 +21,6 @@ fi
 
 echo "Applying ONNX fix patch to $UTILITY_FILE..."
 
-# Apply patch (cd to the directory first so the patch paths work)
 cd "$(dirname "$UTILITY_FILE")"
 patch -p0 < /app/patches/paddleocr_onnx_fix.patch
 

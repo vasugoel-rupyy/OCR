@@ -8,10 +8,9 @@ from typing import Dict, Any
 
 logger = logging.getLogger("ocr_pipeline.api.ollama")
 
-# Possible URLs to reach Ollama from within a Docker container or natively
 DEFAULT_OLLAMA_URLS = [
     os.getenv("OLLAMA_URL"),
-    "http://ollama-service:11434/api/generate", # Hits the new docker-compose sidecar!
+    "http://ollama-service:11434/api/generate",
     "http://host.docker.internal:11434/api/generate",
     "http://10.50.135.162:11434/api/generate",
     "http://192.168.65.1:11434/api/generate",
@@ -150,22 +149,19 @@ INPUT OCR TEXT:
 class OllamaExtractor:
     @staticmethod
     async def extract_disbursement_order(raw_text: str) -> Dict[str, Any]:
-        """Extracts fields from a Disbursement Order using the Qwen model via Ollama."""
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
             "model": os.getenv("OLLAMA_MODEL", "qwen2.5:1.5B"),
             "prompt": prompt,
             "stream": False,
-            "format": "json"  # Hints ollama to return JSON
+            "format": "json"
         }
         
         try:
-            # Try to find a working URL
             response = None
             last_err = None
             
-            # Use 2.0s connect timeout, 300s read timeout
             timeout_config = httpx.Timeout(300.0, connect=2.0)
             async with httpx.AsyncClient(timeout=timeout_config) as client:
                 for url in OLLAMA_URLS:
@@ -173,12 +169,12 @@ class OllamaExtractor:
                         logger.debug(f"Trying Ollama at {url}")
                         response = await client.post(url, json=payload)
                         response.raise_for_status()
-                        break # Success
+                        break
                     except httpx.HTTPStatusError as e:
                         err_msg = f"HTTP {e.response.status_code}: {e.response.text}"
                         logger.error(f"Ollama API Error at {url}: {err_msg}")
                         last_err = Exception(err_msg)
-                        break # Stop trying other URLs if we actually connected but got an API error
+                        break
                     except httpx.ConnectError as e:
                         last_err = e
                         continue
@@ -190,12 +186,10 @@ class OllamaExtractor:
                 
             generated_text = result_json.get("response", "").strip()
             
-            # Extract JSON block
             json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', generated_text, re.DOTALL | re.IGNORECASE)
             if json_match:
                 generated_text = json_match.group(1).strip()
             else:
-                # Fallback: find first { and last }
                 start_idx = generated_text.find("{")
                 end_idx = generated_text.rfind("}")
                 if start_idx != -1 and end_idx != -1:
@@ -220,7 +214,6 @@ class OllamaExtractor:
 
     @staticmethod
     def extract_disbursement_order_sync(raw_text: str) -> Dict[str, Any]:
-        """Extracts fields from a Disbursement Order using the Qwen model synchronously."""
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
@@ -237,15 +230,14 @@ class OllamaExtractor:
             for url in OLLAMA_URLS:
                 try:
                     logger.debug(f"Trying Ollama at {url} (sync)")
-                    # 2s connect timeout, 300s read timeout
                     response = requests.post(url, json=payload, timeout=(2.0, 300.0))
                     response.raise_for_status()
-                    break # Success
+                    break
                 except requests.HTTPError as e:
                         err_msg = f"HTTP {e.response.status_code}: {e.response.text}"
                         logger.error(f"Ollama API Error at {url}: {err_msg}")
                         last_err = Exception(err_msg)
-                        break # Stop trying other URLs if we actually connected but got an API error
+                        break
                 except requests.ConnectionError as e:
                     last_err = e
                     continue

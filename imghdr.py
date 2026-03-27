@@ -1,12 +1,4 @@
-"""
-Compatibility shim for imghdr which was removed in Python 3.13.
-This project uses PaddleOCR which depends on imghdr.
-"""
-
 def what(file, h=None):
-    """
-    Simplified imghdr.what implementation.
-    """
     if h is None:
         if isinstance(file, (str, bytes)):
             try:
