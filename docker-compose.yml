@@ -8,33 +8,46 @@ services:
         OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5B}
     image: custom-ollama-baked:latest
     container_name: ollama-service
-    ports:
-      - "11434:11434"
     restart: unless-stopped
     # GPU reservation removed for CPU-only compatibility
     # To re-enable, add the 'deploy' section with 'driver: nvidia'
 
     # NOTE: Since the model is completely baked in via Ollama.Dockerfile, we don't need a volume here!
+
+  redis:
+    image: redis:7-alpine
+    container_name: ocr_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   ocr-pipeline-api:
     build:
       context: .
       dockerfile: Dockerfile
     image: ocr-pipeline:latest
     container_name: ocr-pipeline-api
+    depends_on:
+      redis:
+        condition: service_healthy
+      ollama-service:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     volumes:
-      # Mount source code for hot-reload during development
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
-      - ./tests:/app/tests:ro
+      - ocr_shared_temp:/app/shared_temp
     environment:
-      # Logging configuration
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379/0
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:1.5B}
+      - OLLAMA_URL=http://ollama-service:11434
     restart: unless-stopped
     healthcheck:
       test:
@@ -47,13 +60,55 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
+
+  ocr-worker:
+    image: ocr-pipeline:latest
+    container_name: ocr-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A ocr_pipeline.core.celery_app worker -Q ocr --loglevel=info --concurrency=2
+    volumes:
+      - ./ocr_pipeline:/app/ocr_pipeline:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ocr_shared_temp:/app/shared_temp
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_URL=http://ollama-service:11434
     deploy:
       resources:
         limits:
           cpus: "2"
-          memory: 8G
-        reservations:
-          cpus: "1"
           memory: 4G
+    restart: unless-stopped
+
+  llm-worker:
+    image: ocr-pipeline:latest
+    container_name: llm-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      ollama-service:
+        condition: service_started
+    command: celery -A ocr_pipeline.core.celery_app worker -Q llm --loglevel=info --concurrency=4
+    volumes:
+      - ./ocr_pipeline:/app/ocr_pipeline:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ocr_shared_temp:/app/shared_temp
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_URL=http://ollama-service:11434
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
+    restart: unless-stopped
+
+volumes:
+  ocr_shared_temp:

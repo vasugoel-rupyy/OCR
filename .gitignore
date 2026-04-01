@@ -44,3 +44,5 @@ batch_results/
 # OS
 .DS_Store
 Thumbs.db
+
+*.env

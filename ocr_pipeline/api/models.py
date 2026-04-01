@@ -22,5 +22,6 @@ class OCRResponse(BaseModel):
     template_confidence: Optional[float] = None
     fallback_confidence: Optional[float] = None
     structured_document: Optional[Union[AadhaarDocument, PanDocument, RcDocument, BaseDocument]] = None
-    raw_ocr_text: Optional[str] = None
+    task_id: Optional[str] = None
+    request_id: Optional[str] = None
     error_details: Optional[str] = None

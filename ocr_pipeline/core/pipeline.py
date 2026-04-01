@@ -28,6 +28,7 @@ from .classification import DocumentClassifier
 from ..segmentation import SegmentationPipeline, Region, BoundingBox
 from ..validation.spatial_validator import SpatialValidator
 from ..validation.business_rules import BusinessRuleValidator
+from ..utils.pii import mask_pii
 
 
 @dataclass
@@ -205,8 +206,8 @@ class OCRPipeline:
             quality_metrics = master_quality_metrics
             image = primary_image
 
-            self.logger.info("--- STAGE 3: FINAL OCR TEXT ---")
-            self.logger.info(f"\n{ocr_result.full_text}")
+            self.logger.info("--- STAGE 3: FINAL OCR TEXT (MASKED) ---")
+            self.logger.info(f"\n{mask_pii(ocr_result.full_text)}")
             self.logger.info("--- END OF OCR TEXT ---")
             
             h, w = image.shape[:2]
