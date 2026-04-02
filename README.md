@@ -6,10 +6,10 @@ A high-performance, self-hosted OCR system designed to extract structured data f
 
 ### 🧠 Core Orchestration
 
-- **Structured Data Extraction**: Returns strictly typed Pydantic models for Aadhaar, PAN, RC, and Disbursement Order documents.
-- **Robust Fallback OCR**: Uses advanced preprocessing and full-text OCR when template matching is disabled or fails.
-- **Multilingual Support**: Supports English and Hindi/Devanagari text extraction with specialized numeral normalization.
-- **Document Classification**: Automatically identifies document types based on keyword frequency and spatial patterns.
+- **Asynchronous Task Queue**: Uses Celery and Redis to handle document processing in the background.
+- **Persistent Storage**: Stores task results and document metadata in MySQL for later retrieval and auditing.
+- **Webhook Integration**: Notifies external systems automatically upon completion with secure HMAC-like headers.
+- **S3/URL Support**: Download and process documents directly from URLs without local file handling.
 - **Multi-page PDF Handling**: Automatically converts, processes, and aggregates results from multiple pages in PDF documents.
 
 ### 📉 10-Component Scoring Model
@@ -32,6 +32,38 @@ The system explains its decisions via a weighted confidence score [0-1] based on
 - **Quality Gate**: Rejects blurry or poorly lit images before heavy processing.
 - **Auto-Deskewing**: Hough line transform to correct rotated documents.
 - **ID Enhancer**: Specialized filters to sharpen small fonts and improve contrast.
+
+## 🏗️ Multi-Service Architecture
+
+The OCR pipeline uses a distributed architecture to handle heavy processing tasks asynchronously.
+
+- **API Server** (FastAPI): Handles incoming requests, file uploads, and status checks.
+- **Celery Workers**:
+  - `ocr-worker`: Handles image preprocessing and PaddleOCR extraction.
+  - `llm-worker`: Handles LLM-based structured data extraction (Ollama).
+- **Redis**: Serves as the message broker for Celery tasks.
+- **MySQL**: Persistent storage for task results and document metadata.
+- **Ollama**: Self-hosted LLM service for deep document intelligence.
+
+---
+
+## 🔐 Environment Variables
+
+The system is configured via environment variables. Create a `.env` file from `.env.example`:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LOG_LEVEL` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) | `INFO` |
+| `REDIS_URL` | Redis connection string for Celery broker | `redis://localhost:6379/0` |
+| `MYSQL_HOST` | MySQL database host | `localhost` |
+| `MYSQL_USER` | MySQL database user | `ocruser` |
+| `MYSQL_PASSWORD` | MySQL database password | `ocrpass` |
+| `MYSQL_DATABASE` | MySQL database name | `ocrdb` |
+| `OLLAMA_URL` | URL for the Ollama service | `http://localhost:11434` |
+| `OLLAMA_MODEL` | LLM model to use (e.g., `qwen2.5:1.5B`) | `qwen2.5:1.5B` |
+| `WEBHOOK_SECRET` | Secret key sent in `X-Webhook-Secret` header | `dev-secret` |
+
+---
 
 ## Installation
 
@@ -66,7 +98,29 @@ The system explains its decisions via a weighted confidence score [0-1] based on
    uv run ocr-pipeline-api
    ```
 
-Visit `http://localhost:8000/docs` to access the API documentation and test the endpoints directly from your browser, such as the direct file upload feature `POST /ocr/process_file`.
+   *Note: For the full asynchronous pipeline (Workers, Redis, MySQL), please use the [Docker Deployment](#-docker-deployment-recommended) method.*
+
+Visit `http://localhost:8000/docs` to access the API documentation.
+
+### New Asynchronous Endpoints
+
+#### 1. Process via URL (S3/Public Link)
+**`POST /ocr/process_url`**
+```json
+{
+  "image_url": "https://s3.region.amazonaws.com/bucket/doc.jpg",
+  "document_type": "pan",
+  "webhook_url": "https://your-api.com/ocr-callback"
+}
+```
+*Returns a `task_id` for polling.*
+
+#### 2. Check Task Status
+**`GET /ocr/status/{task_id}`**
+*Returns the current status (`PENDING`, `STARTED`, `SUCCESS`, `FAILURE`) and result if completed.*
+
+#### 3. Webhook Callback
+If a `webhook_url` is provided, the system will POST the final result to that URL with the `X-Webhook-Secret` header for verification.
 
 ---
 
