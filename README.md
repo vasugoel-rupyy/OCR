@@ -227,6 +227,38 @@ Because Ollama is a completely self-contained sidecar in the same network, the A
 - **Fly.io**: `fly launch` (Docker detected automatically)
 - **Railway**: Connect GitHub repo and deploy
 
+---
+
+## 🔍 Database Inspection
+
+The project stores task results in MySQL. You can inspect the data in two ways:
+
+### 1. Command Line (Via Docker)
+Run this command to access the MySQL shell directly:
+```bash
+docker exec -it ocr_mysql mysql -u${MYSQL_USER:-ocruser} -p${MYSQL_PASSWORD:-ocrpass} ${MYSQL_DATABASE:-ocrdb}
+```
+*Note: If you changed these in your `.env`, replace the values accordingly.*
+
+Common queries:
+```sql
+-- See all task results
+SELECT task_id, status, document_type, created_at FROM ocr_task_results ORDER BY created_at DESC;
+
+-- See full JSON result for a specific task
+SELECT result_json FROM ocr_task_results WHERE task_id = 'your-task-id';
+```
+
+### 2. GUI Client (DBeaver, TablePlus, etc.)
+The MySQL port `3306` is exposed to your host machine. Use the credentials defined in your `.env` file:
+- **Host**: `localhost`
+- **Port**: `3306`
+- **User**: `${MYSQL_USER}` (Default: `ocruser`)
+- **Password**: `${MYSQL_PASSWORD}` (Default: `ocrpass`)
+- **Database**: `${MYSQL_DATABASE}` (Default: `ocrdb`)
+
+---
+
 ### Docker Troubleshooting
 
 <details>

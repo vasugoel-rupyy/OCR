@@ -26,10 +26,12 @@ services:
     container_name: ocr_mysql
     restart: unless-stopped
     environment:
-      - MYSQL_DATABASE=ocrdb
-      - MYSQL_USER=ocruser
-      - MYSQL_PASSWORD=ocrpass
-      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
+      - MYSQL_USER=${MYSQL_USER:-ocruser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-ocrpass}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpass}
+    ports:
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -64,10 +66,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:1.5B}
       - OLLAMA_URL=http://ollama-service:11434
-      - MYSQL_HOST=mysql-db
-      - MYSQL_DATABASE=ocrdb
-      - MYSQL_USER=ocruser
-      - MYSQL_PASSWORD=ocrpass
+      - MYSQL_HOST=${MYSQL_HOST:-mysql-db}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
+      - MYSQL_USER=${MYSQL_USER:-ocruser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-ocrpass}
     restart: unless-stopped
     healthcheck:
       test:
@@ -101,10 +103,10 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama-service:11434
-      - MYSQL_HOST=mysql-db
-      - MYSQL_DATABASE=ocrdb
-      - MYSQL_USER=ocruser
-      - MYSQL_PASSWORD=ocrpass
+      - MYSQL_HOST=${MYSQL_HOST:-mysql-db}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
+      - MYSQL_USER=${MYSQL_USER:-ocruser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-ocrpass}
     deploy:
       resources:
         limits:
@@ -129,10 +131,10 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama-service:11434
-      - MYSQL_HOST=mysql-db
-      - MYSQL_DATABASE=ocrdb
-      - MYSQL_USER=ocruser
-      - MYSQL_PASSWORD=ocrpass
+      - MYSQL_HOST=${MYSQL_HOST:-mysql-db}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
+      - MYSQL_USER=${MYSQL_USER:-ocruser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-ocrpass}
     deploy:
       resources:
         limits:
