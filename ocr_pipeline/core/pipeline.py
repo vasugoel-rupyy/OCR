@@ -278,7 +278,7 @@ class OCRPipeline:
                 required_fields = self._get_required_fields(document_type)
                 mandatory_fields_present = all(field in extracted_fields for field in required_fields)
                 
-                if ocr_confidence_score > 0.9 and mandatory_fields_present:
+                if ocr_confidence_score > 0.8 and mandatory_fields_present:
                     self.logger.info(f"High confidence ({ocr_confidence_score:.2f}) and all mandatory fields found. Skipping enhanced pass.")
                 else:
                     self.logger.info(f"Running enhanced pass for {document_type} (Score: {ocr_confidence_score:.2f}, Mandatory: {mandatory_fields_present})")

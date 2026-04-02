@@ -81,7 +81,7 @@ ocr:
   # PaddleOCR Configuration
   paddle_ocr:
     use_angle_cls: true
-    lang: 'en'  # 'en', 'ch', 'french', 'german', 'korean', 'japan'
+    lang: 'en'  # Standard English-only model
     use_gpu: false  # Set to true if GPU is available
     show_log: false
   

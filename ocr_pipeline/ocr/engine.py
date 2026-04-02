@@ -16,7 +16,7 @@ class PaddleOCREngine:
         
         self.ocr = PaddleOCR(
             use_angle_cls=paddle_config.get('use_angle_cls', True),
-            lang=paddle_config.get('lang', 'en'),
+            lang='en',
             use_gpu=paddle_config.get('use_gpu', False),
             show_log=paddle_config.get('show_log', False),
             use_onnx=use_onnx
@@ -28,7 +28,6 @@ class PaddleOCREngine:
         self.numeric_weight = config.get('numeric_token_weight', 1.5)
         self.alpha_weight = config.get('alpha_token_weight', 1.0)
         self.stopword_weight = config.get('stopword_weight', 0.3)
-    
     def extract_text(self, image: np.ndarray) -> OCRResult:
         result = self.ocr.ocr(image, cls=True)
         

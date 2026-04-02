@@ -10,9 +10,6 @@ services:
     container_name: ollama-service
     restart: unless-stopped
     # GPU reservation removed for CPU-only compatibility
-    # To re-enable, add the 'deploy' section with 'driver: nvidia'
-
-    # NOTE: Since the model is completely baked in via Ollama.Dockerfile, we don't need a volume here!
 
   redis:
     image: redis:7-alpine
@@ -23,6 +20,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  mysql-db:
+    image: mysql:8.0
+    container_name: ocr_mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=ocrdb
+      - MYSQL_USER=ocruser
+      - MYSQL_PASSWORD=ocrpass
+      - MYSQL_ROOT_PASSWORD=rootpass
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uocruser", "-pocrpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   ocr-pipeline-api:
     build:
       context: .
@@ -34,6 +49,8 @@ services:
         condition: service_healthy
       ollama-service:
         condition: service_started
+      mysql-db:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -47,6 +64,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:1.5B}
       - OLLAMA_URL=http://ollama-service:11434
+      - MYSQL_HOST=mysql-db
+      - MYSQL_DATABASE=ocrdb
+      - MYSQL_USER=ocruser
+      - MYSQL_PASSWORD=ocrpass
     restart: unless-stopped
     healthcheck:
       test:
@@ -63,7 +84,7 @@ services:
       resources:
         limits:
           cpus: "1"
-          memory: 2G
+          memory: 4G
 
   ocr-worker:
     image: ocr-pipeline:latest
@@ -71,18 +92,24 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: celery -A ocr_pipeline.core.celery_app worker -Q ocr --loglevel=info --concurrency=2
+      mysql-db:
+        condition: service_healthy
+    command: celery -A ocr_pipeline.core.celery_app worker -Q ocr --loglevel=info --concurrency=2 --max-tasks-per-child=1
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama-service:11434
+      - MYSQL_HOST=mysql-db
+      - MYSQL_DATABASE=ocrdb
+      - MYSQL_USER=ocruser
+      - MYSQL_PASSWORD=ocrpass
     deploy:
       resources:
         limits:
           cpus: "2"
-          memory: 4G
+          memory: 8G
     restart: unless-stopped
 
   llm-worker:
@@ -93,6 +120,8 @@ services:
         condition: service_healthy
       ollama-service:
         condition: service_started
+      mysql-db:
+        condition: service_healthy
     command: celery -A ocr_pipeline.core.celery_app worker -Q llm --loglevel=info --concurrency=4
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
@@ -100,6 +129,10 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama-service:11434
+      - MYSQL_HOST=mysql-db
+      - MYSQL_DATABASE=ocrdb
+      - MYSQL_USER=ocruser
+      - MYSQL_PASSWORD=ocrpass
     deploy:
       resources:
         limits:
@@ -107,3 +140,5 @@ services:
           memory: 2G
     restart: unless-stopped
 
+volumes:
+  mysql_data:

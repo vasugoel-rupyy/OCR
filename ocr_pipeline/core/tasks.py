@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, Optional
 from .celery_app import app
 from .pipeline import OCRPipeline
+from .persistence import persistence
 from ..api.models import OCRResponse
 
 logger = logging.getLogger("ocr_pipeline.tasks")
@@ -26,6 +27,15 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
     input_path can be a local file path or a URL (e.g. S3 link).
     """
     logger.info(f"Starting task {self.request.id} for {input_path} (Type: {document_type}, Request ID: {request_id})")
+    
+    # Initial persistence record (PENDING)
+    persistence.save_result(
+        task_id=self.request.id,
+        request_id=request_id,
+        status="STARTED",
+        document_type=document_type,
+        image_url=input_path
+    )
     
     file_path = input_path
     is_url = input_path.startswith(('http://', 'https://'))
@@ -79,6 +89,16 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
         result["task_id"] = self.request.id
         result["request_id"] = request_id
         
+        # Save final result to MySQL
+        persistence.save_result(
+            task_id=self.request.id,
+            request_id=request_id,
+            status="SUCCESS",
+            document_type=pipeline_result.document_type,
+            image_url=input_path,
+            result=result
+        )
+
         # Webhook callback
         if webhook_url:
             send_webhook(webhook_url, result)
@@ -95,6 +115,16 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
             "error": str(e)
         }
         
+        # Save error to MySQL
+        persistence.save_result(
+            task_id=self.request.id,
+            request_id=request_id,
+            status="FAILURE",
+            document_type=document_type,
+            image_url=input_path,
+            error=str(e)
+        )
+
         if webhook_url:
             send_webhook(webhook_url, error_result)
             

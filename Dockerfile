@@ -15,19 +15,16 @@ COPY ocr_pipeline/ ./ocr_pipeline/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
-RUN mkdir -p /root/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer \
+# Pre-download PaddleOCR models (Detection v4, English Rec v3, Angle Cls v2)
+# This avoids 'double free' crashes seen when running paddle inside the Docker build sandbox
+RUN mkdir -p /root/.paddleocr/whl/det/ch/ch_PP-OCRv4_det_infer \
     && mkdir -p /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer \
     && mkdir -p /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer \
-    && apt-get update && apt-get install -y curl tar && \
-    curl -L https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_det_infer.tar -o /root/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer/en_PP-OCRv3_det_infer.tar && \
-    tar -xf /root/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer/en_PP-OCRv3_det_infer.tar -C /root/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer/ && \
-    curl -L https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_rec_infer.tar -o /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer/en_PP-OCRv3_rec_infer.tar && \
-    tar -xf /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer/en_PP-OCRv3_rec_infer.tar -C /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer/ && \
-    curl -L https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar -o /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/ch_ppocr_mobile_v2.0_cls_infer.tar && \
-    tar -xf /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/ch_ppocr_mobile_v2.0_cls_infer.tar -C /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/ && \
-    rm /root/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer/*.tar \
-    && rm /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer/*.tar \
-    && rm /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/*.tar
+    && apt-get update && apt-get install -y --no-install-recommends curl tar \
+    && curl -fSL https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_det_infer.tar | tar -xf - -C /root/.paddleocr/whl/det/ch/ch_PP-OCRv4_det_infer/ \
+    && curl -fSL https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_rec_infer.tar | tar -xf - -C /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer/ \
+    && curl -fSL https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar | tar -xf - -C /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/ \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 FROM python:3.11-slim
 

@@ -3,8 +3,9 @@ import re
 import json
 import logging
 import httpx
+import time
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger("ocr_pipeline.api.ollama")
 
@@ -147,8 +148,46 @@ INPUT OCR TEXT:
 """
 
 class OllamaExtractor:
+    # Circuit Breaker State
+    _failure_count = 0
+    _last_failure_time = 0.0
+    _state = "CLOSED"  # CLOSED, OPEN
+    _MAX_FAILURES = 3
+    _RECOVERY_TIMEOUT = 60.0  # seconds
+
+    @classmethod
+    def _check_circuit(cls) -> bool:
+        """Returns True if the circuit is CLOSED (allowed) or HALF-OPEN (recovery test)."""
+        if cls._state == "OPEN":
+            if time.time() - cls._last_failure_time > cls._RECOVERY_TIMEOUT:
+                logger.warning("Circuit Breaker entering HALF-OPEN state (testing recovery).")
+                return True
+            return False
+        return True
+
+    @classmethod
+    def _record_success(cls):
+        cls._failure_count = 0
+        cls._state = "CLOSED"
+
+    @classmethod
+    def _record_failure(cls):
+        cls._failure_count += 1
+        cls._last_failure_time = time.time()
+        if cls._failure_count >= cls._MAX_FAILURES:
+            logger.error(f"Circuit Breaker TRIP to OPEN state after {cls._failure_count} failures.")
+            cls._state = "OPEN"
+
     @staticmethod
     async def extract_disbursement_order(raw_text: str) -> Dict[str, Any]:
+        if not OllamaExtractor._check_circuit():
+            logger.warning("Circuit Breaker is OPEN. Failing fast for Ollama request.")
+            return {
+                "error": "circuit_breaker_open",
+                "decision": "REVIEW",
+                "details": "LLM service is currently unavailable (Circuit Breaker OPEN)"
+            }
+        
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
@@ -196,6 +235,7 @@ class OllamaExtractor:
                     generated_text = generated_text[start_idx:end_idx+1]
                 
             extracted_data = json.loads(generated_text)
+            OllamaExtractor._record_success()
             return extracted_data
             
         except json.JSONDecodeError as json_err:
@@ -207,6 +247,7 @@ class OllamaExtractor:
             }
         except Exception as e:
             logger.error(f"Error calling Ollama API: {str(e)}")
+            OllamaExtractor._record_failure()
             return {
                 "error": "ollama_api_error",
                 "details": str(e)
@@ -214,6 +255,14 @@ class OllamaExtractor:
 
     @staticmethod
     def extract_disbursement_order_sync(raw_text: str) -> Dict[str, Any]:
+        if not OllamaExtractor._check_circuit():
+            logger.warning("Circuit Breaker is OPEN (sync). Failing fast.")
+            return {
+                "error": "circuit_breaker_open",
+                "decision": "REVIEW",
+                "details": "LLM service unavailable"
+            }
+        
         prompt = DISBURSEMENT_ORDER_PROMPT.replace("{raw_text}", raw_text)
         
         payload = {
@@ -270,6 +319,7 @@ class OllamaExtractor:
             }
         except Exception as e:
             logger.error(f"Error calling Ollama API synchronously: {str(e)}")
+            OllamaExtractor._record_failure()
             return {
                 "error": "ollama_api_error",
                 "details": str(e)

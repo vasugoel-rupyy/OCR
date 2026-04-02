@@ -37,7 +37,16 @@ app.conf.update(
             "exchange": "llm",
             "routing_key": "llm",
         },
+        "ocr_dlq": {
+            "exchange": "ocr_dlq",
+            "routing_key": "ocr_dlq",
+        },
     },
+    
+    # Retry policy for all tasks
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    task_publish_retry=True,
 )
 
 if __name__ == "__main__":

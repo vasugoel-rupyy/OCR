@@ -5,17 +5,20 @@ from typing import Any, Dict, Optional, Union
 import yaml
 import cv2
 import numpy as np
+from .config_models import AppConfig
 
 
 def load_config(config_path: Union[str, Path] = "config.yaml") -> Dict[str, Any]:
     config_path = Path(config_path)
     if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        # Return default config as dict if file is missing
+        return AppConfig().model_dump()
     
     with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+        config_data = yaml.safe_load(f) or {}
     
-    return config
+    # Use Pydantic to validate and return as a dictionary for backward compatibility
+    return AppConfig(**config_data).model_dump()
 
 
 def setup_logging(config: Optional[Dict[str, Any]] = None) -> logging.Logger:
