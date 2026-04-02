@@ -52,13 +52,13 @@ COPY imghdr.py ./
 COPY patches/ ./patches/
 COPY scripts/ ./scripts/
 
-RUN mkdir -p /app/shared_temp /home/ocruser/.paddleocr
+RUN mkdir -p /home/ocruser/.paddleocr
 COPY --from=builder /root/.paddleocr /home/ocruser/.paddleocr
 
 RUN chmod +x ./scripts/apply-patches.sh
 RUN ./scripts/apply-patches.sh
 
-RUN chown -R ocruser:ocruser /app /app/shared_temp /home/ocruser/.paddleocr
+RUN chown -R ocruser:ocruser /app /home/ocruser/.paddleocr
 
 USER ocruser
 

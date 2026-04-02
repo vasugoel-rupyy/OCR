@@ -25,10 +25,7 @@ app = FastAPI(
     version="1.2.0"
 )
 
-# Shared directory for passing files between containers
-SHARED_TEMP_DIR = "/app/shared_temp"
-if not os.path.exists(SHARED_TEMP_DIR):
-    os.makedirs(SHARED_TEMP_DIR, exist_ok=True)
+# No shared directory needed as URLs are passed directly to workers
 
 # Middleware for Request ID tracing
 @app.middleware("http")
@@ -52,30 +49,19 @@ async def health_check():
 @app.post("/ocr/process_url")
 async def process_url(request: OCRRequest, req: Request):
     """
-    Fetch an image from a URL and enqueue it for OCR processing.
+    Enqueue an image URL (e.g. S3 link) for OCR processing directly.
+    The worker will download the file locally to transient storage.
     """
     request_id = req.state.request_id
     logger.info(f"[{request_id}] URL processing request: {request.image_url}")
     
-    tmp_path = None
     try:
-        import requests
-        response = requests.get(request.image_url, stream=True, timeout=15)
-        response.raise_for_status()
-        
-        url_path = request.image_url.split('?')[0]
-        suffix = os.path.splitext(url_path)[1] if '.' in os.path.basename(url_path) else ".tmp"
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=SHARED_TEMP_DIR) as tmp_file:
-            shutil.copyfileobj(response.raw, tmp_file)
-            tmp_path = tmp_file.name
-        
         # Determine queue based on document type
         queue = "llm" if request.document_type == "disbursement_order" else "ocr"
         
-        # Enqueue task
+        # Enqueue task with URL instead of local path
         task = process_document_task.apply_async(
-            args=[tmp_path, request.document_type, request.webhook_url, request_id],
+            args=[request.image_url, request.document_type, request.webhook_url, request_id],
             queue=queue
         )
         
@@ -85,58 +71,12 @@ async def process_url(request: OCRRequest, req: Request):
                 "status": "processing",
                 "task_id": task.id,
                 "request_id": request_id,
-                "message": "Document enqueued for background processing"
+                "message": "URL enqueued for background processing"
             }
         )
     except Exception as e:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
         logger.error(f"[{request_id}] Failed to enqueue URL task: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to fetch or enqueue file: {str(e)}")
-
-@app.post("/ocr/process_file")
-async def process_file(
-    req: Request,
-    file: UploadFile = File(...),
-    document_type: str = Form("auto"),
-    webhook_url: Optional[str] = Form(None)
-):
-    """
-    Upload a file and enqueue it for OCR processing.
-    """
-    request_id = req.state.request_id
-    logger.info(f"[{request_id}] File processing request: {file.filename}")
-    
-    tmp_path = None
-    try:
-        suffix = os.path.splitext(file.filename)[1] if file.filename else ".tmp"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=SHARED_TEMP_DIR) as tmp_file:
-            shutil.copyfileobj(file.file, tmp_file)
-            tmp_path = tmp_file.name
-            
-        # Determine queue based on document type
-        queue = "llm" if document_type == "disbursement_order" else "ocr"
-        
-        # Enqueue task
-        task = process_document_task.apply_async(
-            args=[tmp_path, document_type, webhook_url, request_id],
-            queue=queue
-        )
-        
-        return JSONResponse(
-            status_code=202,
-            content={
-                "status": "processing",
-                "task_id": task.id,
-                "request_id": request_id,
-                "message": "Document enqueued for background processing"
-            }
-        )
-    except Exception as e:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        logger.error(f"[{request_id}] Failed to enqueue file task: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to enqueue processing task: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to enqueue file: {str(e)}")
 
 @app.get("/ocr/status/{task_id}")
 async def get_status(task_id: str):

@@ -41,7 +41,6 @@ services:
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
-      - ocr_shared_temp:/app/shared_temp
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
@@ -76,7 +75,6 @@ services:
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
-      - ocr_shared_temp:/app/shared_temp
     environment:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama-service:11434
@@ -99,7 +97,6 @@ services:
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
-      - ocr_shared_temp:/app/shared_temp
     environment:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama-service:11434
@@ -110,5 +107,3 @@ services:
           memory: 2G
     restart: unless-stopped
 
-volumes:
-  ocr_shared_temp:

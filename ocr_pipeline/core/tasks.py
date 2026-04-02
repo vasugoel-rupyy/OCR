@@ -1,4 +1,6 @@
 import os
+import shutil
+import tempfile
 import requests
 import logging
 from typing import Dict, Any, Optional
@@ -18,16 +20,37 @@ def get_pipeline():
     return _pipeline
 
 @app.task(bind=True, max_retries=3)
-def process_document_task(self, file_path: str, document_type: str, webhook_url: Optional[str] = None, request_id: Optional[str] = None):
+def process_document_task(self, input_path: str, document_type: str, webhook_url: Optional[str] = None, request_id: Optional[str] = None):
     """
     Background task to process a document.
+    input_path can be a local file path or a URL (e.g. S3 link).
     """
-    logger.info(f"Starting task {self.request.id} for {file_path} (Type: {document_type}, Request ID: {request_id})")
+    logger.info(f"Starting task {self.request.id} for {input_path} (Type: {document_type}, Request ID: {request_id})")
     
-    pipeline = get_pipeline()
-    result = None
+    file_path = input_path
+    is_url = input_path.startswith(('http://', 'https://'))
+    tmp_file_path = None
     
     try:
+        # If input is a URL, download it to transient storage
+        if is_url:
+            logger.info(f"Downloading file from URL: {input_path}")
+            response = requests.get(input_path, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            # Extract suffix from URL or default to .tmp
+            url_base = input_path.split('?')[0]
+            suffix = os.path.splitext(url_base)[1] if '.' in os.path.basename(url_base) else ".tmp"
+            
+            # Create a transient temporary file local to this worker
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                shutil.copyfileobj(response.raw, tmp_file)
+                tmp_file_path = tmp_file.name
+                file_path = tmp_file_path
+                logger.info(f"File downloaded to transient path: {file_path}")
+
+        pipeline = get_pipeline()
+        
         # Run the pipeline
         pipeline_result = pipeline.process_document(file_path, document_type=document_type)
         
@@ -82,13 +105,13 @@ def process_document_task(self, file_path: str, document_type: str, webhook_url:
         return error_result
         
     finally:
-        # Cleanup file after processing
-        if os.path.exists(file_path):
+        # Cleanup transient local file after processing
+        if tmp_file_path and os.path.exists(tmp_file_path):
             try:
-                os.remove(file_path)
-                logger.info(f"Cleaned up temporary file: {file_path}")
+                os.remove(tmp_file_path)
+                logger.info(f"Cleaned up transient file: {tmp_file_path}")
             except Exception as cleanup_error:
-                logger.error(f"Failed to cleanup {file_path}: {cleanup_error}")
+                logger.error(f"Failed to cleanup {tmp_file_path}: {cleanup_error}")
 
 def send_webhook(url: str, payload: Dict[str, Any]):
     """
