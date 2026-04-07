@@ -21,7 +21,20 @@ DEFAULT_OLLAMA_URLS = [
     "http://172.19.0.1:11434/api/generate",
     "http://localhost:11434/api/generate"
 ]
-OLLAMA_URLS = [url for url in DEFAULT_OLLAMA_URLS if url]
+
+def _fix_ollama_url(url: str) -> str:
+    """Helper to ensure Ollama URL includes /api/generate if only base URL provided."""
+    if not url: return url
+    # If it ends with a port or just a hostname, append the endpoint
+    # e.g. http://ollama-service:11434 -> http://ollama-service:11434/api/generate
+    if not url.endswith("/api/generate") and not url.endswith("/api/chat"):
+        if url.endswith("/"):
+            url = url + "api/generate"
+        else:
+            url = url + "/api/generate"
+    return url
+
+OLLAMA_URLS = [_fix_ollama_url(url) for url in DEFAULT_OLLAMA_URLS if url]
 
 DISBURSEMENT_ORDER_PROMPT = """You are an expert document parsing engine.
 

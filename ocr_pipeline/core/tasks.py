@@ -40,6 +40,7 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
     file_path = input_path
     is_url = input_path.startswith(('http://', 'https://'))
     tmp_file_path = None
+    is_retrying = False
     
     try:
         # If input is a URL, download it to transient storage
@@ -130,18 +131,28 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
             
         # Retry logic for transient failures (e.g. Ollama connection)
         if "connection" in str(e).lower() or "timeout" in str(e).lower():
+            is_retrying = True
             raise self.retry(exc=e, countdown=5)
             
         return error_result
         
     finally:
-        # Cleanup transient local file after processing
+        # Cleanup transient local file after processing (downloaded from URL)
         if tmp_file_path and os.path.exists(tmp_file_path):
             try:
                 os.remove(tmp_file_path)
                 logger.info(f"Cleaned up transient file: {tmp_file_path}")
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup {tmp_file_path}: {cleanup_error}")
+        
+        # Cleanup files from shared storage (/llm-calls)
+        # Only delete if we are NOT retrying, to keep file available for next attempt
+        if not is_retrying and input_path.startswith("/llm-calls") and os.path.exists(input_path):
+            try:
+                os.remove(input_path)
+                logger.info(f"Cleaned up shared storage file: {input_path}")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup shared storage file {input_path}: {cleanup_error}")
 
 def send_webhook(url: str, payload: Dict[str, Any]):
     """

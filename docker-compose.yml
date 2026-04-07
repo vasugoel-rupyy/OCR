@@ -58,12 +58,13 @@ services:
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
+      - ./shared:/llm-calls
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:1.5B}
-      - OLLAMA_URL=http://ollama-service:11434
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama-service:11434/api/generate}
       - MYSQL_HOST=${MYSQL_HOST_DOCKER:-mysql-db}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
       - MYSQL_USER=${MYSQL_USER:-ocruser}
@@ -98,9 +99,10 @@ services:
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
+      - ./shared:/llm-calls
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_URL=http://ollama-service:11434
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama-service:11434/api/generate}
       - MYSQL_HOST=${MYSQL_HOST_DOCKER:-mysql-db}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
       - MYSQL_USER=${MYSQL_USER:-ocruser}
@@ -126,9 +128,10 @@ services:
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
+      - ./shared:/llm-calls
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_URL=http://ollama-service:11434
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama-service:11434/api/generate}
       - MYSQL_HOST=${MYSQL_HOST_DOCKER:-mysql-db}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-ocrdb}
       - MYSQL_USER=${MYSQL_USER:-ocruser}

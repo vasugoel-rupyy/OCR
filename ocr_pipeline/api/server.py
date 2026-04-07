@@ -34,6 +34,7 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 def is_private_url(url: str) -> bool:
     """Check if a URL points to a private/internal IP address (SSRF protection)."""
@@ -119,6 +120,76 @@ async def process_url(request: Request, payload: OCRRequest):
     except Exception as e:
         logger.error(f"[{request_id}] Failed to enqueue URL task: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to enqueue file: {str(e)}")
+
+@app.post("/ocr/process_file")
+@limiter.limit("60/minute")
+async def process_file(
+    request: Request,
+    file: UploadFile = File(...),
+    document_type: str = Form("auto"),
+    webhook_url: Optional[str] = Form(None)
+):
+    """
+    Upload a file directly for OCR processing.
+    The file is saved to shared storage (/llm-calls) for workers to access.
+    """
+    request_id = request.state.request_id
+    logger.info(f"[{request_id}] File processing request: {file.filename} (Type: {document_type})")
+    
+    # SSRF Protection for Webhook URL
+    if webhook_url and is_private_url(webhook_url):
+        logger.warning(f"[{request_id}] Rejected private webhook URL: {webhook_url}")
+        raise HTTPException(status_code=400, detail="Private or internal webhook URLs are not allowed")
+
+    # Validate file size
+    try:
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0)
+        
+        if file_size > MAX_FILE_SIZE:
+            logger.warning(f"[{request_id}] Rejected file too large: {file_size} bytes")
+            raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB")
+    except Exception as size_err:
+        logger.error(f"[{request_id}] Could not determine file size: {size_err}")
+
+    # Generate a safe local path in shared storage
+    # Use UUID to prevent collisions
+    safe_filename = f"{request_id}_{uuid.uuid4().hex}_{file.filename}"
+    file_path = os.path.join("/llm-calls", safe_filename)
+    
+    try:
+        # Save uploaded file to shared storage
+        os.makedirs("/llm-calls", exist_ok=True)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        logger.info(f"[{request_id}] File saved to shared storage: {file_path}")
+
+        # Determine queue based on document type
+        queue = "llm" if document_type == "disbursement_order" else "ocr"
+        TASK_ENQUEUED.labels(queue=queue).inc()
+        
+        # Enqueue task with local file path
+        task = process_document_task.apply_async(
+            args=[file_path, document_type, webhook_url, request_id],
+            queue=queue
+        )
+        
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "processing",
+                "task_id": task.id,
+                "request_id": request_id,
+                "message": "File uploaded and enqueued for processing"
+            }
+        )
+    except Exception as e:
+        logger.error(f"[{request_id}] Failed to process upload: {e}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Internal server error while processing upload: {str(e)}")
 
 @app.get("/ocr/status/{task_id}")
 async def get_status(task_id: str):
