@@ -106,12 +106,11 @@ class DecisionEngine:
         
         if self.reject_conflicting_schemas and conflicting_schemas:
             reasons.append("Conflicting document schemas detected (multiple documents in image)")
-            hard_rejection = True
             return DecisionResult(
-                decision=Decision.REJECT,
+                decision=Decision.REVIEW,
                 confidence_score=document_confidence.final_score,
                 reasons=reasons,
-                hard_rejection=True
+                hard_rejection=False
             )
         
         if self.reject_multiple_documents and multi_document_detected:

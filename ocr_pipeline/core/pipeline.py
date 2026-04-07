@@ -222,7 +222,7 @@ class OCRPipeline:
             num_regions = 1
             region_info = selected_region.to_dict()
             
-            multi_document_flag = False
+            multi_document_flag = len(pil_images) > 1
             conflicting_schemas = False
             
             if document_type == 'auto':

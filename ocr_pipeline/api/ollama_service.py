@@ -106,8 +106,8 @@ DECISION LOGIC
 -----------------------------------
 decision:
 - "APPROVED" → if all critical fields present
-- "REVIEW" → if some fields missing
-- "REJECTED" → if unusable
+- "REVIEW" → if some fields missing OR multiple distinct images/documents detected
+- "REJECTED" → if unusable or blank
 
 Critical fields:
 - customer_name
