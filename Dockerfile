@@ -15,8 +15,6 @@ COPY ocr_pipeline/ ./ocr_pipeline/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
-# Pre-download PaddleOCR models (Detection v4, English Rec v3, Angle Cls v2)
-# This avoids 'double free' crashes seen when running paddle inside the Docker build sandbox
 RUN mkdir -p /root/.paddleocr/whl/det/ch/ch_PP-OCRv4_det_infer \
     && mkdir -p /root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer \
     && mkdir -p /root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer \

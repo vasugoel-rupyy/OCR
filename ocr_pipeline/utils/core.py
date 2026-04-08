@@ -11,13 +11,11 @@ from .config_models import AppConfig
 def load_config(config_path: Union[str, Path] = "config.yaml") -> Dict[str, Any]:
     config_path = Path(config_path)
     if not config_path.exists():
-        # Return default config as dict if file is missing
         return AppConfig().model_dump()
     
     with open(config_path, 'r') as f:
         config_data = yaml.safe_load(f) or {}
     
-    # Use Pydantic to validate and return as a dictionary for backward compatibility
     return AppConfig(**config_data).model_dump()
 
 

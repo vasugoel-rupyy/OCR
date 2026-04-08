@@ -32,7 +32,6 @@ class MySQLPersistence:
         password = os.getenv("MYSQL_PASSWORD", "ocrpass")
         database = os.getenv("MYSQL_DATABASE", "ocrdb")
         
-        # MySQL connection string using pymysql
         self.db_url = f"mysql+pymysql://{user}:{password}@{host}/{database}"
         self.engine = create_engine(
             self.db_url, 
@@ -42,7 +41,6 @@ class MySQLPersistence:
         )
         self.Session = sessionmaker(bind=self.engine)
         
-        # Ensure table exists
         try:
             Base.metadata.create_all(self.engine)
             logger.info("MySQL persistence layer initialized and tables created.")
@@ -55,7 +53,6 @@ class MySQLPersistence:
                     error: Optional[str] = None):
         session = self.Session()
         try:
-            # Check if exists (idempotency)
             existing = session.query(OCRTaskResult).filter_by(task_id=task_id).first()
             
             if existing:
@@ -82,5 +79,4 @@ class MySQLPersistence:
         finally:
             session.close()
 
-# Singleton instance
 persistence = MySQLPersistence()

@@ -1,7 +1,6 @@
 from prometheus_client import Counter, Histogram, REGISTRY
 
-# Define metrics in a separate module to ensure they are only registered once
-# This prevents ValueError: Duplicated timeseries in CollectorRegistry
+
 
 REQUEST_COUNT = Counter(
     "ocr_request_total", 

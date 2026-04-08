@@ -373,12 +373,11 @@ class OCRPipeline:
             stage_start = time.time()
             self.logger.debug("Stage 6: Post-OCR Validation & Fuzzy Matching")
             
-            if False: # Removed bypass to enable unified scoring
+            if False: 
                 pass
             else:
                 regex_score = 1.0 
                 
-                # Use disbursement_order if that's the type, otherwise default to aadhaar
                 valid_doc_types = ['aadhaar', 'pan', 'vehicle_rc', 'disbursement_order']
                 anchor_doc_type = document_type if document_type in valid_doc_types else 'aadhaar'
                 fuzzy_score, anchor_details = self.anchor_validator.validate_anchors(ocr_result.full_text, anchor_doc_type)
@@ -421,7 +420,7 @@ class OCRPipeline:
                     weights = self.FIELD_WEIGHTS[document_type]
                     missing_critical = []
                     for field, weight in weights.items():
-                        if weight >= 0.15 and field not in extracted_fields: # Slightly lower threshold for DO fields
+                        if weight >= 0.15 and field not in extracted_fields: 
                             missing_critical.append(field)
                     
                     if missing_critical:

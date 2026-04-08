@@ -25,8 +25,6 @@ DEFAULT_OLLAMA_URLS = [
 def _fix_ollama_url(url: str) -> str:
     """Helper to ensure Ollama URL includes /api/generate if only base URL provided."""
     if not url: return url
-    # If it ends with a port or just a hostname, append the endpoint
-    # e.g. http://ollama-service:11434 -> http://ollama-service:11434/api/generate
     if not url.endswith("/api/generate") and not url.endswith("/api/chat"):
         if url.endswith("/"):
             url = url + "api/generate"
@@ -163,12 +161,11 @@ INPUT OCR TEXT:
 """
 
 class OllamaExtractor:
-    # Circuit Breaker State
     _failure_count = 0
     _last_failure_time = 0.0
-    _state = "CLOSED"  # CLOSED, OPEN
+    _state = "CLOSED"   
     _MAX_FAILURES = 3
-    _RECOVERY_TIMEOUT = 60.0  # seconds
+    _RECOVERY_TIMEOUT = 60.0 
 
     @classmethod
     def _check_circuit(cls) -> bool:

@@ -31,7 +31,7 @@ class BaseDocument(BaseModel):
     overall_confidence: float = 0.0
     decision: Decision = Decision.REVIEW
     
-    # Metadata for debugging
+
     raw_extraction: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
 
 

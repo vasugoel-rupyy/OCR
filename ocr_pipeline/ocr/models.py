@@ -9,7 +9,7 @@ class WordData:
     """Data for a single OCR word."""
     text: str
     confidence: float
-    bbox: Tuple[int, int, int, int]  # (x, y, width, height)
+    bbox: Tuple[int, int, int, int]
     line_num: int
     word_num: int
     is_numeric: bool = False
@@ -98,8 +98,6 @@ class OCRResult:
         self.full_text += other.full_text
         
         # Append words and lines
-        # NOTE: We keep coordinates as-is (per-page) since processors 
-        # usually rely on proximity and keywords rather than global coordinates
         self.words.extend(other.words)
         self.lines.extend(other.lines)
         

@@ -47,13 +47,12 @@ class ImageQualityAssessor:
         self.min_resolution = config.get('min_resolution', 300)
         self.max_glare_ratio = config.get('max_glare_ratio', 0.05)
         
-        # Weights for composite score
         weights = config.get('weights', {})
-        self.weight_blur = weights.get('blur', 0.30)  # Reduced from 0.35
+        self.weight_blur = weights.get('blur', 0.30)  
         self.weight_brightness = weights.get('brightness', 0.20)
-        self.weight_resolution = weights.get('resolution', 0.20)  # Reduced from 0.25
+        self.weight_resolution = weights.get('resolution', 0.20)  
         self.weight_contrast = weights.get('contrast', 0.20)
-        self.weight_glare = weights.get('glare', 0.10)  # New weight
+        self.weight_glare = weights.get('glare', 0.10)  
     
     def assess(self, image: np.ndarray) -> QualityMetrics:
         """Assess overall image quality.
@@ -64,7 +63,6 @@ class ImageQualityAssessor:
         Returns:
             QualityMetrics object with all scores
         """
-        # Calculate individual metrics
         blur_score = self.calculate_blur_score(image)
         brightness_score = self.calculate_brightness_score(image)
         resolution_score = self.calculate_resolution_score(image)
@@ -72,14 +70,12 @@ class ImageQualityAssessor:
         edge_density = self.calculate_edge_density(image)
         glare_ratio = self.calculate_glare_ratio(image)
         
-        # Normalize scores to [0, 1]
         normalized_blur = self._normalize_blur(blur_score)
         normalized_brightness = self._normalize_brightness(brightness_score)
         normalized_resolution = self._normalize_resolution(resolution_score)
         normalized_contrast = self._normalize_contrast(contrast_score)
         normalized_glare = self._normalize_glare(glare_ratio)
         
-        # Calculate composite score
         composite_score = (
             self.weight_blur * normalized_blur +
             self.weight_brightness * normalized_brightness +
@@ -88,7 +84,6 @@ class ImageQualityAssessor:
             self.weight_glare * normalized_glare
         )
         
-        # Check if quality gate passed
         failure_reasons = []
         
         if blur_score < self.min_blur_score:
@@ -131,13 +126,11 @@ class ImageQualityAssessor:
         Returns:
             Blur score (Laplacian variance)
         """
-        # Convert to grayscale if needed
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             gray = image
         
-        # Calculate Laplacian variance
         laplacian = cv2.Laplacian(gray, cv2.CV_64F)
         variance = laplacian.var()
         
@@ -207,10 +200,8 @@ class ImageQualityAssessor:
         else:
             gray = image
         
-        # Apply Canny edge detection
         edges = cv2.Canny(gray, 50, 150)
         
-        # Calculate edge density
         total_pixels = edges.size
         edge_pixels = np.count_nonzero(edges)
         
@@ -236,16 +227,13 @@ class ImageQualityAssessor:
 
     def _normalize_blur(self, blur_score: float) -> float:
         """Normalize blur score to [0, 1]."""
-        # Higher is better, cap at 1000
         return min(1.0, blur_score / 1000.0)
     
     def _normalize_brightness(self, brightness: float) -> float:
         """Normalize brightness to [0, 1]."""
-        # Optimal range is [50, 200], penalize extremes
         if brightness < self.min_brightness or brightness > self.max_brightness:
             return 0.0
         
-        # Peak at 127.5 (middle gray)
         distance_from_optimal = abs(brightness - 127.5)
         return 1.0 - (distance_from_optimal / 127.5) * 0.5
         
@@ -253,8 +241,6 @@ class ImageQualityAssessor:
 
     def _normalize_resolution(self, resolution: float) -> float:
         """Normalize resolution to [0, 1]."""
-        # Assume minimum acceptable is 640x480 = 307,200 pixels
-        # Good quality is 1920x1080 = 2,073,600 pixels
         min_pixels = 307200
         good_pixels = 2073600
         
@@ -269,13 +255,11 @@ class ImageQualityAssessor:
         """Normalize glare ratio to [0, 1]. High glare -> low score."""
         max_acceptable = self.config.get('max_glare_ratio', 0.05)
         if glare_ratio > max_acceptable:
-            # Penalize heavily if above threshold
             return max(0.0, 1.0 - (glare_ratio / max_acceptable))
         return 1.0 - (glare_ratio / max_acceptable * 0.5)
 
     def _normalize_contrast(self, contrast: float) -> float:
         """Normalize contrast to [0, 1]."""
-        # Good contrast is typically > 0.3, excellent > 0.5
         if contrast < 0.1:
             return 0.0
         elif contrast < 0.5:

@@ -40,26 +40,23 @@ class DocumentClassifier:
             ]
         }
         
-        # Regex patterns for strong signals
         self.type_patterns = {
             'aadhaar': [
-                r'\b\d{4}\s+\d{4}\s+\d{4}\b',  # Aadhaar number (12 digits with spaces)
-                r'\b\d{12}\b',  # Aadhaar number (12 digits continuous)
-                r'(?:aadhaar|आधार)',  # Aadhaar keyword
-                r'UIDAI',  # UIDAI keyword
+                r'\b\d{4}\s+\d{4}\s+\d{4}\b',  
+                r'\b\d{12}\b',  
+                r'(?:aadhaar|आधार)',  
+                r'UIDAI',  
             ],
             'pan': [
-                r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b',  # PAN format
-                # Fuzzy matches for "Income Tax Department"
+                r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b',  
                 r'[I1|]NCOME\s*TAX\s*DEP[A-Z]*',
-                r'NCOME\s*T[A-X]+',  # Handle missing leading I
-                # Fuzzy matches for "Permanent Account Number"
+                r'NCOME\s*T[A-X]+',  
                 r'P[AE]RM[A-Z]*\s*ACC[A-Z]*\s*NUM[A-Z]*',
-                r'(?:father\'?s?\s+name)',  # Father's name
-                r'GOVT\.?\s*O[Ff]\s*IND[A-Z]*', # Govt of India
+                r'(?:father\'?s?\s+name)',  
+                r'GOVT\.?\s*O[Ff]\s*IND[A-Z]*', 
             ],
             'vehicle_rc': [
-                r'\b[A-Z]{2}\s*[-]?\s*\d{2}\s*[-]?\s*[A-Z]{1,2}\s*[-]?\s*\d{4}\b',  # Registration number
+                r'\b[A-Z]{2}\s*[-]?\s*\d{2}\s*[-]?\s*[A-Z]{1,2}\s*[-]?\s*\d{4}\b',  
                 r'(?:registration\s+certificate|vehicle\s+informa)',
                 r'(?:chassis|engine\s+no)',
                 r'(?:fuel|seating|unladen|wheel\s*base)',
@@ -88,35 +85,27 @@ class DocumentClassifier:
         
         logger.debug(f"Classifying text (len={len(text)}): {text[:100]}...")
         
-        # Keyword scoring
         for dtype, keywords in self.type_keywords.items():
             for keyword in keywords:
                 if keyword.lower() in text_lower:
-                    # Longer keywords are stronger indicators
                     weight = 2 if len(keyword.split()) > 1 else 1
                     scores[dtype] += weight
         
-        # Regex scoring (Strong signals)
         for dtype, patterns in self.type_patterns.items():
             for pattern in patterns:
                 if re.search(pattern, text, re.IGNORECASE):
-                    scores[dtype] += 5  # High weight for pattern match
+                    scores[dtype] += 5  
         
         logger.info(f"Classification scores: {scores}")
         
-        # Decision logic - highest score wins
         max_score = max(scores.values())
         
-        # If all scores are 0, default to aadhaar (most common)
         if max_score == 0:
             logger.warning("No classification signals found, defaulting to 'aadhaar'")
             return 'aadhaar', scores
         
-        # Get document type with highest score
         classified_type = max(scores, key=scores.get)
         
-        # Tie-breaker: if multiple types have same score, use priority order
-        # Priority: disbursement_order > vehicle_rc > pan > aadhaar (more specific to less specific)
         if list(scores.values()).count(max_score) > 1:
             logger.info(f"Tie detected, using priority order")
             priority_order = ['disbursement_order', 'vehicle_rc', 'pan', 'aadhaar']
@@ -125,9 +114,7 @@ class DocumentClassifier:
                     classified_type = dtype
                     break
         
-        # Calculate specialized confidence for DO (as per requirements)
         if classified_type == 'disbursement_order':
-            # Count the number of matched positive indicators
             matched_indicators = 0
             for keyword in self.type_keywords['disbursement_order']:
                 if keyword.lower() in text_lower:
@@ -136,11 +123,8 @@ class DocumentClassifier:
                 if re.search(p, text, re.IGNORECASE):
                     matched_indicators += 1
                     
-            # Confidence logic: >= 2 indicators gives high confidence
-            do_confidence = min(1.0, matched_indicators / 3.0) # 3 or more is 1.0, 2 is 0.66, 1 is 0.33
+            do_confidence = min(1.0, matched_indicators / 3.0) 
             
-            # Since the requirement says route to SEFM if >=0.75, run + flag if 0.45-0.75, manual review < 0.45.
-            # We will return the confidence as part of scores dictionary for downstream evaluation.
             scores['disbursement_order_confidence'] = do_confidence
 
         logger.info(f"Classified as: {classified_type} (score: {scores[classified_type]})")

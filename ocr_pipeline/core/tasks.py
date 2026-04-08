@@ -11,7 +11,6 @@ from ..api.models import OCRResponse
 
 logger = logging.getLogger("ocr_pipeline.tasks")
 
-# Initialize pipeline lazily per worker process
 _pipeline = None
 
 def get_pipeline():
@@ -28,7 +27,6 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
     """
     logger.info(f"Starting task {self.request.id} for {input_path} (Type: {document_type}, Request ID: {request_id})")
     
-    # Initial persistence record (PENDING)
     persistence.save_result(
         task_id=self.request.id,
         request_id=request_id,
@@ -43,17 +41,14 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
     is_retrying = False
     
     try:
-        # If input is a URL, download it to transient storage
         if is_url:
             logger.info(f"Downloading file from URL: {input_path}")
             response = requests.get(input_path, stream=True, timeout=30)
             response.raise_for_status()
             
-            # Extract suffix from URL or default to .tmp
             url_base = input_path.split('?')[0]
             suffix = os.path.splitext(url_base)[1] if '.' in os.path.basename(url_base) else ".tmp"
             
-            # Create a transient temporary file local to this worker
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
                 shutil.copyfileobj(response.raw, tmp_file)
                 tmp_file_path = tmp_file.name
@@ -62,10 +57,8 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
 
         pipeline = get_pipeline()
         
-        # Run the pipeline
         pipeline_result = pipeline.process_document(file_path, document_type=document_type)
         
-        # Prepare response model for consistent output
         reason = "-"
         if hasattr(pipeline_result, 'decision_result') and pipeline_result.decision_result:
             if pipeline_result.decision_result.reasons:
@@ -83,14 +76,12 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
             template_confidence=pipeline_result.ocr_stats.get('template_score'),
             fallback_confidence=pipeline_result.ocr_stats.get('fallback_score'),
             structured_document=pipeline_result.structured_document,
-            raw_ocr_text=None  # Masked/Removed in production as per audit
+            raw_ocr_text=None  
         ).model_dump(mode='json')
         
-        # Add metadata
         result["task_id"] = self.request.id
         result["request_id"] = request_id
         
-        # Save final result to MySQL
         persistence.save_result(
             task_id=self.request.id,
             request_id=request_id,
@@ -100,7 +91,6 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
             result=result
         )
 
-        # Webhook callback
         if webhook_url:
             send_webhook(webhook_url, result)
             
@@ -116,7 +106,6 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
             "error": str(e)
         }
         
-        # Save error to MySQL
         persistence.save_result(
             task_id=self.request.id,
             request_id=request_id,
@@ -129,7 +118,6 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
         if webhook_url:
             send_webhook(webhook_url, error_result)
             
-        # Retry logic for transient failures (e.g. Ollama connection)
         if "connection" in str(e).lower() or "timeout" in str(e).lower():
             is_retrying = True
             raise self.retry(exc=e, countdown=5)
@@ -137,7 +125,6 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
         return error_result
         
     finally:
-        # Cleanup transient local file after processing (downloaded from URL)
         if tmp_file_path and os.path.exists(tmp_file_path):
             try:
                 os.remove(tmp_file_path)
@@ -145,8 +132,6 @@ def process_document_task(self, input_path: str, document_type: str, webhook_url
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup {tmp_file_path}: {cleanup_error}")
         
-        # Cleanup files from shared storage (/llm-calls)
-        # Only delete if we are NOT retrying, to keep file available for next attempt
         if not is_retrying and input_path.startswith("/llm-calls") and os.path.exists(input_path):
             try:
                 os.remove(input_path)
@@ -160,7 +145,6 @@ def send_webhook(url: str, payload: Dict[str, Any]):
     """
     logger.info(f"Sending results to webhook: {url}")
     try:
-        # Simple API Key authentication (to be improved if needed)
         headers = {
             "Content-Type": "application/json",
             "X-Webhook-Secret": os.getenv("WEBHOOK_SECRET", "dev-secret")
