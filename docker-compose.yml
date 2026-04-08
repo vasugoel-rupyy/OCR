@@ -5,14 +5,24 @@ services:
       dockerfile: Ollama.Dockerfile
       args:
         OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5B}
-    image: custom-ollama-baked:latest
+    image: custom-ollama-baked:optimized
     container_name: ollama-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2.5G
+        reservations:
+          memory: 2G
 
   redis:
     image: redis:7-alpine
     container_name: ocr_redis
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -32,6 +42,10 @@ services:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    deploy:
+      resources:
+        limits:
+          memory: 384M
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uocruser", "-pocrpass"]
       interval: 10s
@@ -85,7 +99,7 @@ services:
       resources:
         limits:
           cpus: "1"
-          memory: 4G
+          memory: 384M
 
   ocr-worker:
     image: ocr-pipeline:latest
@@ -95,7 +109,7 @@ services:
         condition: service_healthy
       mysql-db:
         condition: service_healthy
-    command: celery -A ocr_pipeline.core.celery_app worker -Q ocr --loglevel=info --concurrency=2 --max-tasks-per-child=1
+    command: celery -A ocr_pipeline.core.celery_app worker -Q ocr --loglevel=info --concurrency=1 --max-tasks-per-child=1
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
@@ -111,7 +125,7 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 8G
+          memory: 2G
     restart: unless-stopped
 
   llm-worker:
@@ -124,7 +138,7 @@ services:
         condition: service_started
       mysql-db:
         condition: service_healthy
-    command: celery -A ocr_pipeline.core.celery_app worker -Q llm --loglevel=info --concurrency=4
+    command: celery -A ocr_pipeline.core.celery_app worker -Q llm --loglevel=info --concurrency=1
     volumes:
       - ./ocr_pipeline:/app/ocr_pipeline:ro
       - ./config.yaml:/app/config.yaml:ro
@@ -140,7 +154,7 @@ services:
       resources:
         limits:
           cpus: "1"
-          memory: 2G
+          memory: 256M
     restart: unless-stopped
 
 volumes:

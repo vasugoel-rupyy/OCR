@@ -373,25 +373,20 @@ class OCRPipeline:
             stage_start = time.time()
             self.logger.debug("Stage 6: Post-OCR Validation & Fuzzy Matching")
             
-            if document_type == 'disbursement_order':
-                regex_score, fuzzy_score, kv_score, distribution_score, spatial_score = 1.0, 1.0, 1.0, 1.0, 1.0
-                schema_score = 1.0
-                conflicting_schemas = False
-                
-                business_valid = (ollama_decision == "APPROVED")
-                business_reasons = [] if business_valid else [f"Ollama determined decision: {ollama_decision}"]
-                mandatory_fields_present = True if business_valid else mandatory_fields_present
-                self.logger.info(f"Stage 6 Bypassed: Ollama result dictates validation (Decision: {ollama_decision}).")
+            if False: # Removed bypass to enable unified scoring
+                pass
             else:
                 regex_score = 1.0 
                 
-                anchor_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                # Use disbursement_order if that's the type, otherwise default to aadhaar
+                valid_doc_types = ['aadhaar', 'pan', 'vehicle_rc', 'disbursement_order']
+                anchor_doc_type = document_type if document_type in valid_doc_types else 'aadhaar'
                 fuzzy_score, anchor_details = self.anchor_validator.validate_anchors(ocr_result.full_text, anchor_doc_type)
                 
-                kv_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                kv_doc_type = document_type if document_type in valid_doc_types else 'aadhaar'
                 kv_score = self.kv_extractor.validate_kv_pairs(ocr_result, kv_doc_type)
                 
-                dist_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                dist_doc_type = document_type if document_type in valid_doc_types else 'aadhaar'
                 distribution_score, dist_metrics = self.distribution_analyzer.analyze(ocr_result.full_text, dist_doc_type)
                 
                 schema_score = self._calculate_weighted_schema_score(extracted_fields, document_type)
@@ -417,7 +412,7 @@ class OCRPipeline:
                         self.logger.warning(f"Spatial validation failed: {e}")
                         spatial_score = 1.0
                 
-                business_doc_type = document_type if document_type in ['aadhaar', 'pan', 'vehicle_rc'] else 'aadhaar'
+                business_doc_type = document_type if document_type in valid_doc_types else 'aadhaar'
                 business_valid, business_reasons = self.business_rule_validator.validate(extracted_fields, business_doc_type)
                 if not business_valid:
                     self.logger.info(f"Business rule validation failed: {business_reasons}")
@@ -426,7 +421,7 @@ class OCRPipeline:
                     weights = self.FIELD_WEIGHTS[document_type]
                     missing_critical = []
                     for field, weight in weights.items():
-                        if weight >= 0.25 and field not in extracted_fields:
+                        if weight >= 0.15 and field not in extracted_fields: # Slightly lower threshold for DO fields
                             missing_critical.append(field)
                     
                     if missing_critical:
@@ -654,7 +649,7 @@ class OCRPipeline:
             'aadhaar': ['aadhaar_number', 'name', 'date_of_birth'],
             'pan': ['pan_number', 'name', 'date_of_birth'],
             'vehicle_rc': ['registration_number', 'owner_name'],
-            'disbursement_order': []
+            'disbursement_order': ['customer_name', 'loan_amount', 'disbursed_amount', 'tenure_months', 'rate_of_interest']
         }
         
         return required_fields_map.get(document_type, ['id_number', 'name'])

@@ -72,37 +72,39 @@ FIELD EXTRACTION RULES
 Map fields EXACTLY as follows:
 
 loan_amount:
-  Extract from: "Gross Loan Amt"
-
+  Look for: "Gross Loan Amt", "Sanctioned Amt", "Total Loan", or large currency values near "Car Loan" or "Term Loan". Default to null if not found.
+  
 disbursed_amount:
-  Extract from: "Net Loan Disb Amt"
+  Look for: "Net Loan Disb Amt", "Disbursement Amount", "Payment to dealer", or values near "Disbursement". Default to null if not found.
 
 rate_of_interest:
-  Extract from: "Rate"
+  Look for: "Rate", "ROI", "Interest Rate", or percentages (e.g., 8.75%). Normalize to numeric. Default to null if not found.
 
 tenure_months:
-  Extract from: "Tenure (M)"
+  Look for: "Tenure", "Period", "Months", or "60", "84", etc. near maturity. Default to null if not found.
 
 customer_name:
-  Extract from: "Customer Name"
+  Look for: "Customer Name", "Name of Borrower", or names starting with MR/MRS/MS. Default to null if not found.
 
 bank_name:
-  If NOT explicitly present → null
+  Extract the entity name (e.g., "Bank of Baroda", "HDFC BANK"). Default to null if not found.
 
 ifsc:
-  If NOT present → null
+  Extract the 11-digit alphanumeric IFSC code. Default to null if not found.
 
 bank_branch_region:
-  If NOT present → null
+  Look for: Branch address, locality, or city labels.
+  SPECIAL CASE (Bank of Baroda): Usually found on the 2nd/3rd line after the bank name. Default to null if not found.
 
 branch_id:
-  If NOT present → null
+  Look for: Alpha-numeric branch codes or IDs.
+  SPECIAL CASE (Bank of Baroda): Usually found on the 4th/5th line after the bank name. Default to null if not found.
 
 -----------------------------------
 CLEANING RULES
 -----------------------------------
-- Remove commas, extra spaces
-- Convert numbers to plain numeric (no symbols)
+- Remove commas, extra spaces, currency symbols (₹, Rs, /-)
+- Convert numbers to plain numeric strings
 - Keep strings clean and trimmed
 - Normalize percentages (e.g., "15%" → "15")
 
@@ -111,14 +113,14 @@ CONFIDENCE SCORING
 -----------------------------------
 - 0.9+ → exact match (clear label + value)
 - 0.7–0.9 → minor OCR noise
-- 0.5–0.7 → inferred
+- 0.5–0.7 → inferred from context/relative position
 - <0.5 → weak / uncertain
 
 -----------------------------------
 DECISION LOGIC
 -----------------------------------
 decision:
-- "APPROVED" → if all critical fields present
+- "APPROVED" → if all critical fields present and high confidence
 - "REVIEW" → if some fields missing OR multiple distinct images/documents detected
 - "REJECTED" → if unusable or blank
 
